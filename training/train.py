@@ -24,11 +24,13 @@ from transformers import (
     set_seed,
 )
 
+from training.build_dataset import read_jsonl as read_jsonl_rows
+
 ID2LABEL = {0: "BENIGN", 1: "INJECTION"}
 
 
 def read_jsonl(path: Path, limit: int | None = None, seed: int = 0) -> Dataset:
-    rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    rows = read_jsonl_rows(path)
     data = Dataset.from_list([{"text": r["text"], "label": int(r["label"])} for r in rows])
     if limit and len(data) > limit:
         data = data.shuffle(seed=seed).select(range(limit))

@@ -248,9 +248,16 @@ def stratified_split(
 
 
 def write_jsonl(path: Path, examples: list[Example]) -> None:
-    with path.open("w") as f:
+    with path.open("w", encoding="utf-8") as f:
         for ex in examples:
             f.write(json.dumps(asdict(ex), ensure_ascii=False) + "\n")
+
+
+def read_jsonl(path: Path) -> list[dict]:
+    """Read one JSON object per line. Iterates the file rather than calling str.splitlines(),
+    which would also split on Unicode separators such as U+2028 inside prompt text."""
+    with path.open(encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
 
 
 def summarize(examples: list[Example]) -> dict:

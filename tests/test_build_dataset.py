@@ -2,8 +2,10 @@ from training.build_dataset import (
     Example,
     dedupe,
     normalize,
+    read_jsonl,
     remove_overlap,
     stratified_split,
+    write_jsonl,
 )
 
 LONG = (
@@ -57,3 +59,10 @@ def test_stratified_split_keeps_every_stratum_and_no_overlap():
     assert {ex.label for ex in test} == {0, 1}
     texts = [ex.text for ex in train + val + test]
     assert len(texts) == len(set(texts))
+
+
+def test_jsonl_round_trip_keeps_unicode_line_separators(tmp_path):
+    rows = [Example("line one\u2028line two", 1, "a"), Example("plain", 0, "b")]
+    write_jsonl(tmp_path / "x.jsonl", rows)
+    back = read_jsonl(tmp_path / "x.jsonl")
+    assert [r["text"] for r in back] == ["line one\u2028line two", "plain"]

@@ -26,10 +26,11 @@ from sklearn.metrics import average_precision_score, precision_recall_curve
 
 from app.rails.injection import InjectionClassifier
 from app.rails.rules import RulesRail
+from training.build_dataset import read_jsonl as read_jsonl_rows
 
 
 def read_jsonl(path: Path, default_label: int | None = None) -> tuple[list[str], np.ndarray]:
-    rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    rows = read_jsonl_rows(path)
     labels = [r.get("label", default_label) for r in rows]
     return [r["text"] for r in rows], np.array(labels, dtype=int)
 

@@ -18,6 +18,7 @@ from app.config import Settings, get_settings
 from app.pipeline import PipelineResult, overall_action, run_rails
 from app.policy import PolicyRegistry
 from app.proxy import forward_chat_completion
+from app.rails.injection import InjectionRail
 from app.rails.pii import PiiRail
 from app.store import DecisionStore
 
@@ -32,8 +33,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.policies = PolicyRegistry(settings.policy_dir, settings.spacy_model)
         _, rails = app.state.policies.get("default")
         for rail in rails:
-            if isinstance(rail, PiiRail):
-                rail.warm_up()  # load the spaCy model now, not on the first request
+            if isinstance(rail, PiiRail | InjectionRail):
+                rail.warm_up()  # load models now, not on the first request
         app.state.store = DecisionStore(settings.database_url)
         await app.state.store.init()
         app.state.http = httpx.AsyncClient(timeout=settings.upstream_timeout_s)

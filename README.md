@@ -87,11 +87,45 @@ input_rails:
     entities: [EMAIL_ADDRESS, PHONE_NUMBER, US_SSN, CREDIT_CARD]
 ```
 
+## Injection classifier
+
+Rules catch known phrasings; the classifier catches paraphrases. `microsoft/deberta-v3-small` is
+fine-tuned on public datasets and served on CPU as the `injection` rail.
+
+| Source | Role |
+| --- | --- |
+| `deepset/prompt-injections` | Injection vs. benign (training) |
+| `jackhhao/jailbreak-classification` | Jailbreak vs. benign (training) |
+| `databricks/databricks-dolly-15k` | Benign instructions, 2,500 sampled (training) |
+| `Lakera/gandalf_ignore_instructions` | Real attacks, **fully held out** to test generalization |
+| `eval/tricky_benign.jsonl` | 150 hand-written safe prompts that look dangerous, to measure false positives |
+
+Leakage controls: exact and near-duplicate prompts (MinHash, Jaccard ≥ 0.8 on word 5-grams) are
+collapsed before splitting, groups with conflicting labels are dropped, and held-out prompts that
+nearly duplicate anything on the training side are removed. The blocking threshold is chosen on
+the validation split, never on a test set.
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu && pip install -e ".[train]"
+python -m training.build_dataset --out data
+python -m training.train --data data --out models/injection-deberta
+python -m training.evaluate --model models/injection-deberta --data data --out reports
+```
+
+The same pipeline runs on GitHub Actions (**Train injection classifier**, manual trigger) and
+publishes metrics to the job summary. To enable the rail, add it to a policy after `rules`:
+
+```yaml
+  injection:
+    model: models/injection-deberta   # or a Hugging Face Hub id
+    threshold: 0.5                    # use the threshold reported by evaluate.py
+```
+
 ## Development
 
 ```bash
 python -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]" && python -m spacy download en_core_web_sm
+pip install -e ".[dev]" && python -m spacy download en_core_web_sm   # add ",ml" to test the classifier
 pytest -q
 ruff check . && ruff format --check .
 uvicorn app.main:app --reload   # uses SQLite by default; set SAFEGATE_DATABASE_URL for Postgres
@@ -103,7 +137,8 @@ Never commit `.env`.
 ## Roadmap
 
 - [x] **Week 1:** streaming proxy, rules rail, Presidio PII rail, PostgreSQL decision log, Prometheus metrics, Docker compose, pytest, CI
-- [ ] **Week 2:** dataset build (dedupe across sources, hold out one full dataset), fine-tune `microsoft/deberta-v3-small`, evaluation with PR curve, injection rail
+- [x] **Week 2 (code):** dataset build with cross-source dedupe and a held-out source, DeBERTa fine-tuning, evaluation vs. rules baseline with PR curve, injection rail
+- [ ] **Week 2 (results):** train on the full data and publish the benchmark table
 - [x] Demo page (playground + live monitor) and one-click public deploy to Hugging Face Spaces
 - [ ] **Week 3:** output rails (PII redaction, toxicity), Redis rate limiting and cache, garak scan of bare LLM vs. SafeGate, latency benchmark
 - [ ] **Week 4:** AWS deployment, results table, architecture diagram, demo video; stretch: ONNX export, baseline comparison, NLI grounding check

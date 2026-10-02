@@ -6,6 +6,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from app.rails.base import Rail
+from app.rails.injection import InjectionRail
 from app.rails.pii import PiiRail
 from app.rails.rules import RulesRail
 
@@ -26,6 +27,12 @@ class PiiConfig(BaseModel):
     )
 
 
+class InjectionConfig(BaseModel):
+    model: str  # local directory or Hugging Face Hub id
+    threshold: float = 0.5
+    max_length: int = 256
+
+
 class Policy(BaseModel):
     name: str = "default"
     # Message roles whose content is screened. System prompts come from the app and are trusted.
@@ -41,6 +48,8 @@ class Policy(BaseModel):
                 rails.append(RulesRail(**RulesConfig(**cfg).model_dump()))
             elif rail_name == "pii":
                 rails.append(PiiRail(**PiiConfig(**cfg).model_dump(), spacy_model=spacy_model))
+            elif rail_name == "injection":
+                rails.append(InjectionRail(**InjectionConfig(**cfg).model_dump()))
             else:
                 raise ValueError(f"unknown input rail {rail_name!r} in policy {self.name!r}")
         return rails

@@ -1,0 +1,86 @@
+name: Train injection classifier
+
+# Builds the dataset, fine-tunes DeBERTa-v3-small on CPU and evaluates it against the
+# rules-only baseline. Metrics land in the job summary and the "reports" artifact; the model
+# lands in the "injection-model" artifact and, if HF_TOKEN and HF_MODEL_REPO are configured,
+# on the Hugging Face Hub.
+
+on:
+  workflow_dispatch:
+    inputs:
+      epochs:
+        description: Training epochs
+        default: "3"
+      max_train_samples:
+        description: Cap on training examples (blank = all)
+        default: ""
+      push_to_hub:
+        description: Upload the model to HF_MODEL_REPO
+        type: boolean
+        default: false
+
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    env:
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[train]"
+      - name: Build dataset
+        run: python -m training.build_dataset --out data
+      - name: Train
+        run: |
+          python -m training.train --data data --out models/injection-deberta \
+            --epochs "${{ inputs.epochs }}" \
+            ${{ inputs.max_train_samples && format('--max-train-samples {0}', inputs.max_train_samples) || '' }}
+      - name: Evaluate
+        run: |
+          python -m training.evaluate --model models/injection-deberta --data data --out reports
+          cp data/stats.json reports/dataset_stats.json
+          {
+            echo "## Injection classifier results"
+            echo
+            cat reports/metrics.md
+            echo
+            echo "Dataset: \`reports/dataset_stats.json\` in the reports artifact."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: reports/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: injection-model
+          path: |
+            models/injection-deberta/
+            !models/injection-deberta/checkpoints/
+      - name: Push model to Hugging Face Hub
+        if: inputs.push_to_hub && vars.HF_MODEL_REPO != ''
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_MODEL_REPO: ${{ vars.HF_MODEL_REPO }}
+        run: |
+          python - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          repo = os.environ["HF_MODEL_REPO"]
+          api.create_repo(repo, exist_ok=True)
+          api.upload_folder(
+              repo_id=repo,
+              folder_path="models/injection-deberta",
+              ignore_patterns=["checkpoints/*"],
+              commit_message=f"Train {os.environ['GITHUB_SHA'][:7]}",
+          )
+          api.upload_folder(repo_id=repo, folder_path="reports", path_in_repo="reports")
+          PY

@@ -1,0 +1,25 @@
+# Default policy. Copy to policies/<app>.yaml and send `X-SafeGate-App: <app>` to override per app.
+screen_roles: [user]   # add `tool` to screen tool outputs for indirect injection
+
+# Rails run in the order listed: cheap checks first, expensive ones last.
+input_rails:
+  rules:
+    max_chars: 8000
+    denylist:
+      - ignore all previous instructions
+      - ignore previous instructions
+      - disregard your system prompt
+      - you are now dan
+    patterns:
+      - '(?:reveal|print|show|repeat)\s+(?:your|the)\s+(?:system|hidden|initial)\s+(?:prompt|instructions)'
+      - 'pretend\s+(?:that\s+)?you\s+(?:have|are)\s+no\s+(?:rules|restrictions|filters)'
+  pii:
+    mode: redact          # redact | block
+    threshold: 0.4       # Presidio scores bare phone numbers at 0.4
+    entities:
+      - EMAIL_ADDRESS
+      - PHONE_NUMBER
+      - US_SSN
+      - CREDIT_CARD
+      - IBAN_CODE
+      - IP_ADDRESS

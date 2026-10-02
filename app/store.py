@@ -2,7 +2,7 @@ import hashlib
 from dataclasses import asdict
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, Float, Index, Integer, String, select
+from sqlalchemy import JSON, DateTime, Float, Index, Integer, String, func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -117,3 +117,44 @@ class DecisionStore:
         async with self.sessions() as session:
             rows = (await session.scalars(query)).all()
         return [row.to_dict() for row in rows]
+
+    async def stats(self, window: int = 1000) -> dict:
+        """Summary of the most recent `window` decisions for the dashboard."""
+        query = (
+            select(Decision.action, Decision.blocked_by, Decision.screen_ms, Decision.verdicts)
+            .order_by(Decision.id.desc())
+            .limit(window)
+        )
+        async with self.sessions() as session:
+            total = await session.scalar(select(func.count(Decision.id)))
+            rows = (await session.execute(query)).all()
+        by_action = {"allow": 0, "redact": 0, "block": 0}
+        blocks_by_rail: dict[str, int] = {}
+        redactions_by_rail: dict[str, int] = {}
+        latencies = sorted(r.screen_ms for r in rows)
+        for row in rows:
+            by_action[row.action] = by_action.get(row.action, 0) + 1
+            if row.blocked_by:
+                blocks_by_rail[row.blocked_by] = blocks_by_rail.get(row.blocked_by, 0) + 1
+            for verdict in row.verdicts:
+                if verdict.get("action") == "redact":
+                    rail = verdict.get("rail", "?")
+                    redactions_by_rail[rail] = redactions_by_rail.get(rail, 0) + 1
+        return {
+            "total": total or 0,
+            "window": len(rows),
+            "by_action": by_action,
+            "blocks_by_rail": blocks_by_rail,
+            "redactions_by_rail": redactions_by_rail,
+            "screen_ms": {
+                "p50": _percentile(latencies, 0.50),
+                "p95": _percentile(latencies, 0.95),
+            },
+        }
+
+
+def _percentile(sorted_values: list[float], q: float) -> float | None:
+    if not sorted_values:
+        return None
+    index = min(len(sorted_values) - 1, round(q * (len(sorted_values) - 1)))
+    return round(sorted_values[index], 3)

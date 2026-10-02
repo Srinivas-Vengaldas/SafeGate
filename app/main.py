@@ -4,11 +4,12 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Literal
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
@@ -19,6 +20,8 @@ from app.policy import PolicyRegistry
 from app.proxy import forward_chat_completion
 from app.rails.pii import PiiRail
 from app.store import DecisionStore
+
+STATIC_DIR = Path(__file__).parent / "static"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -47,6 +50,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.ready = False
 
+    @app.get("/", include_in_schema=False)
+    async def demo() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
+
+    @app.get("/v1/stats")
+    async def stats(window: int = Query(1000, ge=1, le=10000)) -> dict[str, Any]:
+        """Aggregates over the most recent decisions, for the dashboard."""
+        return await app.state.store.stats(window)
+
+    @app.get("/v1/policy")
+    async def policy_info(x_safegate_app: str | None = Header(default=None)) -> dict[str, Any]:
+        """The active policy, so the demo can show which rails run and in what order."""
+        policy, _ = app.state.policies.get(x_safegate_app)
+        return policy.model_dump()
+
     @app.get("/healthz")
     async def healthz() -> dict[str, Any]:
         if not app.state.ready:
@@ -73,6 +91,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "request_id": request_id,
             "action": result.action.value,
             "text": result.text,
+            "screen_ms": round(screen_ms, 3),
             "verdicts": [_verdict_json(v) for v in result.verdicts],
         }
 

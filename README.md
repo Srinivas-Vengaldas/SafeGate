@@ -8,6 +8,17 @@ wrongly blocks legitimate users.
 > Status: **Week 1 of 4.** Proxy, rules rail, PII rail, decision log, metrics, Docker and CI are
 > in. The fine-tuned injection classifier, output rails and benchmark come next (see Roadmap).
 
+## Demo
+
+Open `http://localhost:8000/` after `docker compose up`. The page has two panels:
+
+- **Playground:** type a prompt (or pick an example attack) and see each rail's verdict, score and
+  reason, plus exactly what the LLM would receive after redaction.
+- **Live monitor:** request counts by verdict, blocks and redactions per rail, p50/p95 screening
+  latency, and the most recent audit-log entries, refreshed every few seconds.
+
+To host it publicly for free, see [docs/deploy-demo.md](docs/deploy-demo.md).
+
 ## How it works
 
 ```
@@ -50,6 +61,9 @@ A blocked request raises `openai.BadRequestError` with `error.type == "safegate_
 | `POST /v1/chat/completions` | OpenAI-compatible proxy, including `stream: true` passthrough |
 | `POST /v1/check` | Screen text without calling an LLM; returns per-rail verdicts |
 | `GET /v1/decisions` | Audit log; filters: `app`, `action`, `rail` (blocking rail), `since`, `until`, `limit`, `offset` |
+| `GET /v1/stats` | Dashboard aggregates over recent decisions: counts by verdict and rail, p50/p95 latency |
+| `GET /v1/policy` | The active policy (rails and their order) |
+| `GET /` | Demo page: playground and live monitor |
 | `GET /metrics` | Prometheus: requests by action, verdicts by rail, rail and screening latency |
 | `GET /healthz` | Liveness; returns 503 until policies and models are loaded |
 
@@ -90,7 +104,8 @@ Never commit `.env`.
 
 - [x] **Week 1:** streaming proxy, rules rail, Presidio PII rail, PostgreSQL decision log, Prometheus metrics, Docker compose, pytest, CI
 - [ ] **Week 2:** dataset build (dedupe across sources, hold out one full dataset), fine-tune `microsoft/deberta-v3-small`, evaluation with PR curve, injection rail
-- [ ] **Week 3:** output rails (PII redaction, toxicity), Redis rate limiting and cache, dashboard, garak scan of bare LLM vs. SafeGate, latency benchmark
+- [x] Demo page (playground + live monitor) and one-click public deploy to Hugging Face Spaces
+- [ ] **Week 3:** output rails (PII redaction, toxicity), Redis rate limiting and cache, garak scan of bare LLM vs. SafeGate, latency benchmark
 - [ ] **Week 4:** AWS deployment, results table, architecture diagram, demo video; stretch: ONNX export, baseline comparison, NLI grounding check
 
 ## Results

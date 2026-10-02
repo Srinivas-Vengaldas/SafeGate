@@ -48,7 +48,7 @@ class WeightedTrainer(Trainer):
         labels = inputs.pop("labels")
         outputs = model(**inputs)
         loss = nn.functional.cross_entropy(
-            outputs.logits, labels, weight=self.class_weights.to(outputs.logits.device)
+            outputs.logits.float(), labels, weight=self.class_weights.to(outputs.logits.device)
         )
         return (loss, outputs) if return_outputs else loss
 
@@ -81,8 +81,13 @@ def main() -> None:
     val = read_jsonl(args.data / "val.jsonl")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model)
+    # Some Hub checkpoints are stored in fp16; train in fp32 on CPU.
     model = AutoModelForSequenceClassification.from_pretrained(
-        args.model, num_labels=2, id2label=ID2LABEL, label2id={v: k for k, v in ID2LABEL.items()}
+        args.model,
+        dtype=torch.float32,
+        num_labels=2,
+        id2label=ID2LABEL,
+        label2id={v: k for k, v in ID2LABEL.items()},
     )
 
     def tokenize(batch):

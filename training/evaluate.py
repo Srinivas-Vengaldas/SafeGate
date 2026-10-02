@@ -57,9 +57,56 @@ def binary_metrics(labels: np.ndarray, preds: np.ndarray) -> dict[str, float | i
 
 
 def best_f1_threshold(labels: np.ndarray, scores: np.ndarray) -> float:
+    """Threshold with the best validation F1.
+
+    A well-separated validation split often reaches its best F1 over a wide range of thresholds.
+    Taking the lowest one hugs the benign side and inflates false positives on unseen benign
+    traffic, so pick the middle of the tied range, measured in logit space.
+    """
     precision, recall, thresholds = precision_recall_curve(labels, scores)
-    f1 = 2 * precision * recall / np.maximum(precision + recall, 1e-12)
-    return float(thresholds[int(np.argmax(f1[:-1]))])
+    f1 = (2 * precision * recall / np.maximum(precision + recall, 1e-12))[:-1]
+    tied = set(np.flatnonzero(f1 >= f1.max() - 1e-9).tolist())
+    start = min(tied)
+    end = start
+    while end + 1 in tied:  # first contiguous block of best-F1 thresholds
+        end += 1
+    # Any cutoff in (threshold just below the block, last threshold in the block] gives that F1.
+    high = float(thresholds[end])
+    if start == 0:
+        return float(thresholds[0])
+    low = float(thresholds[start - 1])
+
+    def logit(p: float) -> float:
+        p = min(max(p, 1e-9), 1 - 1e-9)
+        return float(np.log(p / (1 - p)))
+
+    mid = (logit(low) + logit(high)) / 2
+    return float(1 / (1 + np.exp(-mid)))
+
+
+SWEEP = (0.5, 0.9, 0.99)
+
+
+def threshold_sweep(
+    scores: dict[str, np.ndarray], sets: dict[str, tuple[list[str], np.ndarray]], chosen: float
+) -> list[dict]:
+    rows = []
+    for threshold in sorted({round(chosen, 4), *SWEEP}):
+        metrics = {
+            name: binary_metrics(labels, (scores[name] >= threshold).astype(int))
+            for name, (_, labels) in sets.items()
+        }
+        rows.append(
+            {
+                "threshold": threshold,
+                "chosen": threshold == round(chosen, 4),
+                "test_recall": metrics["test"]["recall"],
+                "test_fpr": metrics["test"]["fpr"],
+                "holdout_recall": metrics["holdout"]["recall"],
+                "tricky_benign_fpr": metrics["tricky_benign"]["fpr"],
+            }
+        )
+    return rows
 
 
 def rules_baseline(policy_path: Path) -> RulesRail:
@@ -127,7 +174,7 @@ def to_markdown(report: dict) -> str:
     ]
     lines = [
         f"Held-out source: `{report['holdout_source']}`. Threshold {report['threshold']:.3f} "
-        "chosen on the validation split (best F1).",
+        "chosen on the validation split (middle of the best-F1 range).",
         "",
         "| Metric | Rules only | Classifier |",
         "| --- | ---: | ---: |",
@@ -139,6 +186,19 @@ def to_markdown(report: dict) -> str:
     lines.append(f"| Test PR AUC | – | {report['classifier']['test_pr_auc']:.3f} |")
     lat = report["classifier_latency_ms"]
     lines.append(f"| CPU latency per prompt (p50 / p95) | <1 ms | {lat['p50']} / {lat['p95']} ms |")
+    lines += [
+        "",
+        "Threshold sweep (classifier only):",
+        "",
+        "| Threshold | Test recall | Test FPR | Held-out recall | Tricky-benign FPR |",
+        "| ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in report["threshold_sweep"]:
+        mark = " (chosen)" if row["chosen"] else ""
+        lines.append(
+            f"| {row['threshold']:.3f}{mark} | {row['test_recall']:.1%} | {row['test_fpr']:.1%} "
+            f"| {row['holdout_recall']:.1%} | {row['tricky_benign_fpr']:.1%} |"
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -183,6 +243,7 @@ def main() -> None:
         "sizes": {name: len(texts) for name, (texts, _) in sets.items()},
         "classifier": classifier_report,
         "rules_baseline": baseline,
+        "threshold_sweep": threshold_sweep(scores, sets, threshold),
         "classifier_latency_ms": latency_ms(classifier, sets["test"][0]),
         "tricky_benign_flagged": [
             t

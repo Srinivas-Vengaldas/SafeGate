@@ -15,6 +15,9 @@ on:
       max_train_samples:
         description: Cap on training examples (blank = all)
         default: ""
+      reuse_model_run:
+        description: Skip training and re-evaluate the model from this earlier run ID
+        default: ""
       push_to_hub:
         description: Upload the model to HF_MODEL_REPO (when configured)
         type: boolean
@@ -22,6 +25,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   train:
@@ -42,7 +46,16 @@ jobs:
           pip install -e ".[train]"
       - name: Build dataset
         run: python -m training.build_dataset --out data
+      - name: Download model from an earlier run
+        if: inputs.reuse_model_run != ''
+        uses: actions/download-artifact@v4
+        with:
+          name: injection-model
+          path: models/injection-deberta
+          run-id: ${{ inputs.reuse_model_run }}
+          github-token: ${{ github.token }}
       - name: Train
+        if: inputs.reuse_model_run == ''
         run: |
           python -m training.train --data data --out models/injection-deberta \
             --epochs "${{ inputs.epochs }}" \

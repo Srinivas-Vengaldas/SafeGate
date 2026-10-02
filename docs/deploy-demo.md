@@ -12,7 +12,11 @@ enough: it serves the playground, the live monitor and `/docs` at a public URL.
 4. In this GitHub repo: **Settings → Secrets and variables → Actions**
    - Secrets tab: add `HF_TOKEN` with the token.
    - Variables tab: add `HF_SPACE` with `<your-hf-username>/safegate`.
+   - Variables tab: add `HF_MODEL_REPO` with `<your-hf-username>/safegate-injection-deberta`
+     (the training workflow creates this model repo on its first run).
 5. Run the **Deploy demo** workflow from the Actions tab (or push to `main`).
+6. Run **Train injection classifier** from the Actions tab. When it finishes it publishes the
+   model, and the demo redeploys automatically with the injection rail switched on.
 
 The Space builds the Docker image and serves the app at
 `https://<your-hf-username>-safegate.hf.space`. Every later push to `main` redeploys it.

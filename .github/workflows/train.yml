@@ -3,7 +3,8 @@ name: Train injection classifier
 # Builds the dataset, fine-tunes DeBERTa-v3-small on CPU and evaluates it against the
 # rules-only baseline. Metrics land in the job summary and the "reports" artifact; the model
 # lands in the "injection-model" artifact and, if HF_TOKEN and HF_MODEL_REPO are configured,
-# on the Hugging Face Hub.
+# on the Hugging Face Hub, where the public demo loads it from. The reports are also committed
+# to a `training-results/<run id>` branch so they can be merged into the README.
 
 on:
   workflow_dispatch:
@@ -15,9 +16,12 @@ on:
         description: Cap on training examples (blank = all)
         default: ""
       push_to_hub:
-        description: Upload the model to HF_MODEL_REPO
+        description: Upload the model to HF_MODEL_REPO (when configured)
         type: boolean
-        default: false
+        default: true
+
+permissions:
+  contents: write
 
 jobs:
   train:
@@ -54,6 +58,15 @@ jobs:
             echo
             echo "Dataset: \`reports/dataset_stats.json\` in the reports artifact."
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Commit reports to a results branch
+        run: |
+          branch="training-results/${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -f reports/
+          git commit -m "Training results from run ${GITHUB_RUN_ID}"
+          git push origin "$branch"
       - uses: actions/upload-artifact@v4
         with:
           name: reports

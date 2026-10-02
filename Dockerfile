@@ -5,7 +5,10 @@ WORKDIR /srv
 
 COPY pyproject.toml ./
 COPY app ./app
-RUN pip install . && python -m spacy download en_core_web_sm
+# CPU-only PyTorch keeps the image small; the injection classifier is designed to run on CPU.
+RUN pip install torch --index-url https://download.pytorch.org/whl/cpu \
+ && pip install ".[ml]" \
+ && python -m spacy download en_core_web_sm
 
 COPY policies ./policies
 

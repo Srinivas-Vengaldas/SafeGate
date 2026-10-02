@@ -66,6 +66,10 @@ SOURCES: dict[str, Source] = {
     "dolly": Source(
         "databricks/databricks-dolly-15k", "instruction", lambda row: BENIGN, ("train",), 2500
     ),
+    # Hard negatives: benign coding requests full of words like ignore, override, kill, execute.
+    "codealpaca": Source(
+        "sahil2801/CodeAlpaca-20k", "instruction", lambda row: BENIGN, ("train",), 2500
+    ),
 }
 
 
@@ -282,6 +286,12 @@ def main() -> None:
     parser.add_argument("--val", type=float, default=0.1)
     parser.add_argument("--test", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--exclude",
+        type=Path,
+        default=Path("eval/tricky_benign.jsonl"),
+        help="Evaluation prompts that must not appear (even nearly) in any split",
+    )
     args = parser.parse_args()
 
     args.out.mkdir(parents=True, exist_ok=True)
@@ -291,6 +301,10 @@ def main() -> None:
 
     pool = [ex for key, rows in loaded.items() if key != args.holdout for ex in rows]
     pool, dedupe_stats = dedupe(pool, args.near_dup, args.seed)
+    excluded = 0
+    if args.exclude.exists():
+        eval_rows = [Example(r["text"], BENIGN, "eval") for r in read_jsonl(args.exclude)]
+        pool, excluded = remove_overlap(pool, eval_rows, args.near_dup, args.seed)
     holdout, holdout_dedupe = dedupe(loaded[args.holdout], args.near_dup, args.seed)
     holdout, overlap = remove_overlap(holdout, pool, args.near_dup, args.seed)
     train, val, test = stratified_split(pool, args.val, args.test, args.seed)
@@ -306,6 +320,7 @@ def main() -> None:
         "dedupe": dedupe_stats,
         "holdout_dedupe": holdout_dedupe,
         "holdout_removed_for_overlap_with_training_side": overlap,
+        "removed_for_overlap_with_eval_set": excluded,
         "splits": {
             "train": summarize(train),
             "val": summarize(val),

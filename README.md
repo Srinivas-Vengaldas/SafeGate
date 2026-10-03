@@ -140,45 +140,57 @@ Never commit `.env`.
 - [x] **Week 1:** streaming proxy, rules rail, Presidio PII rail, PostgreSQL decision log, Prometheus metrics, Docker compose, pytest, CI
 - [x] **Week 2 (code):** dataset build with cross-source dedupe and a held-out source, DeBERTa fine-tuning, evaluation vs. rules baseline with PR curve, injection rail
 - [x] **Week 2 (results v1):** trained and benchmarked; see Results
-- [ ] **Week 2 (results v2):** retrain with hard-negative benign data to cut false positives
+- [x] **Week 2 (results v2):** retrained with hard-negative benign data; tricky-benign false positives 18.7% → 4.7%
 - [x] Demo page (playground + live monitor) and one-click public deploy to Hugging Face Spaces
 - [ ] **Week 3:** output rails (PII redaction, toxicity), Redis rate limiting and cache, garak scan of bare LLM vs. SafeGate, latency benchmark
 - [ ] **Week 4:** AWS deployment, results table, architecture diagram, demo video; stretch: ONNX export, baseline comparison, NLI grounding check
 
 ## Results
 
-### Injection classifier v1
+### Injection classifier
 
-DeBERTa-v3-small, 3 epochs on CPU (GitHub Actions, 94 minutes), 3,454 training prompts.
-Full report: [reports/v1/metrics.md](reports/v1/metrics.md).
+DeBERTa-v3-small, 3 epochs on CPU (GitHub Actions). Full reports:
+[v1](reports/v1/metrics.md), [v2](reports/v2/metrics.md).
 
-| Metric | Rules only | Classifier |
-| --- | ---: | ---: |
-| Test recall | 1.2% | 100.0% |
-| Test precision | 100.0% | 97.6% |
-| Test false-positive rate | 0.0% | 0.6% |
-| Held-out source recall (Gandalf, never seen in training) | 12.7% | 91.4% |
-| Tricky-benign false-positive rate | 0.0% | 18.7% |
-| CPU latency per prompt, p50 / p95 | <1 ms | 71 / 379 ms |
+| Metric | Rules only | v1 | **v2 (current)** |
+| --- | ---: | ---: | ---: |
+| Test recall | 2.5% | 100.0% | 91.2% |
+| Test precision | 100.0% | 97.6% | 97.3% |
+| Test false-positive rate | 0.0% | 0.6% | 0.3% |
+| Held-out source recall (Gandalf, never seen in training) | 12.7% | 91.4% | 87.2% |
+| **Tricky-benign false-positive rate** | 0.0% | 18.7% | **4.7%** |
+| CPU latency per prompt, p50 / p95 | <1 ms | 71 / 379 ms | 79 / 431 ms |
+
+Rules-only numbers are on the v2 test split; v1's rules-only recall was 1.2%.
 
 What this shows:
 
-- **Rules alone are not a defense.** The denylist caught 1 of 80 test attacks and 13% of the
+- **Rules alone are not a defense.** The denylist caught 2 of 80 test attacks and 13% of the
   held-out Gandalf attacks.
-- **The classifier generalizes across sources.** Recall drops from 100% in-distribution to 91.4%
-  on a dataset it never saw, which is the more honest number.
-- **It over-blocks benign prompts that use attack-like words.** 28 of 150 hand-written safe
-  prompts were flagged, including "Please ignore case when comparing these two strings" and
-  "How do I escape user input before inserting it into HTML?". Raising the threshold does not fix
-  it (still 10% at 0.99), so the model has learned that words like *ignore*, *override* and shell
-  commands mean attack. The training data has almost no benign prompts that contain them.
+- **The classifier generalizes across sources,** with recall dropping from 91% in-distribution to
+  87% on a dataset it never saw. The held-out number is the honest one.
+- **v1 over-blocked safe prompts that use attack-like words.** It flagged 28 of 150 hand-written
+  safe prompts (for example "Please ignore case when comparing these two strings") at every
+  threshold, because its training data had almost no benign prompts with words like *ignore*,
+  *override* or shell commands.
+- **v2 fixes most of that with hard negatives.** Adding 2,500 benign coding instructions
+  (CodeAlpaca) cut tricky-benign false positives from 18.7% to 4.7%, at the cost of some recall.
+  Most of the 7 prompts it still flags talk about ignoring or forgetting earlier text, or about a
+  bot's instructions and rules, which is genuinely close to real attacks. Any training prompt that nearly matched the tricky-benign set
+  was removed first, so that set still measures unseen prompts.
 - **Long prompts are slow.** p95 latency comes from multi-window jailbreak prompts; ONNX export
   and an input-length cap are planned.
 
-![Precision-recall curve on the test split](reports/v1/pr_curve.png)
+Operating point: the threshold is chosen on validation data (0.47). Raising it trades recall for
+fewer false positives:
 
-Next: v2 adds benign coding instructions as hard negatives (kept separate from the tricky-benign
-evaluation set) and retrains.
+| Threshold | Held-out recall | Tricky-benign FPR |
+| ---: | ---: | ---: |
+| 0.47 (default) | 87.2% | 4.7% |
+| 0.90 | 83.8% | 2.0% |
+| 0.99 | 78.2% | 0.7% |
+
+![Precision-recall curve on the test split](reports/v2/pr_curve.png)
 
 garak attack-success rates and end-to-end gateway latency arrive in Week 3.
 

@@ -31,7 +31,6 @@ class InjectionConfig(BaseModel):
     model: str  # local directory or Hugging Face Hub id
     threshold: float = 0.5
     max_length: int = 256
-    max_windows: int | None = 4  # first and last windows of very long prompts
 
 
 class Policy(BaseModel):

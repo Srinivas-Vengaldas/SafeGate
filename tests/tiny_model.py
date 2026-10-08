@@ -4,7 +4,7 @@ without downloading a real checkpoint."""
 from pathlib import Path
 
 
-def make_tiny_classifier(path: Path, words: list[str]) -> Path:
+def make_tiny_classifier(path: Path, words: list[str], init_range: float = 0.02) -> Path:
     from transformers import BertConfig, BertForSequenceClassification, BertTokenizerFast
 
     path.mkdir(parents=True, exist_ok=True)
@@ -19,6 +19,7 @@ def make_tiny_classifier(path: Path, words: list[str]) -> Path:
         intermediate_size=32,
         max_position_embeddings=128,
         num_labels=2,
+        initializer_range=init_range,
         id2label={0: "BENIGN", 1: "INJECTION"},
         label2id={"BENIGN": 0, "INJECTION": 1},
     )

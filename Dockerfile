@@ -5,19 +5,20 @@ WORKDIR /srv
 
 COPY pyproject.toml ./
 COPY app ./app
-# CPU-only PyTorch keeps the image small; the injection classifier is designed to run on CPU.
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu \
- && pip install ".[ml]" \
+# The injection classifier is served as an int8 ONNX model, so the image needs ONNX Runtime
+# but not PyTorch.
+RUN pip install ".[onnx]" \
  && python -m spacy download en_core_web_sm
 
 COPY policies ./policies
 
-# uid 1000 matches what hosted platforms such as Hugging Face Spaces run as.
+# A fixed non-root uid, which most container hosts expect.
 RUN useradd --create-home --uid 1000 safegate
 USER safegate
 
 # Without Postgres (e.g. the public demo) the decision log falls back to SQLite in the user's home.
 ENV SAFEGATE_DATABASE_URL=sqlite+aiosqlite:////home/safegate/safegate.db \
+    MALLOC_ARENA_MAX=2 \
     PORT=8000
 EXPOSE 8000
 HEALTHCHECK --interval=15s --timeout=3s --start-period=30s \

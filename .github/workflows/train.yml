@@ -71,6 +71,16 @@ jobs:
             echo
             echo "Dataset: \`reports/dataset_stats.json\` in the reports artifact."
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Export to ONNX (int8) and evaluate it as served
+        run: |
+          python -m training.export_onnx --model models/injection-deberta --out models/injection-onnx
+          python -m training.evaluate --model models/injection-onnx --data data \
+            --out reports/onnx --max-windows 4
+          {
+            echo "## Served model: ONNX int8, at most 4 windows per prompt"
+            echo
+            cat reports/onnx/metrics.md
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Commit reports to a results branch
         run: |
           branch="training-results/${GITHUB_RUN_ID}"
@@ -84,6 +94,10 @@ jobs:
         with:
           name: reports
           path: reports/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: injection-onnx
+          path: models/injection-onnx/
       - uses: actions/upload-artifact@v4
         with:
           name: injection-model

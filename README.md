@@ -17,7 +17,7 @@ Open `http://localhost:8000/` after `docker compose up`. The page has two panels
 - **Live monitor:** request counts by verdict, blocks and redactions per rail, p50/p95 screening
   latency, and the most recent audit-log entries, refreshed every few seconds.
 
-To host it publicly on the Google Cloud Run free tier, see [docs/deploy-demo.md](docs/deploy-demo.md).
+To host it publicly on Render's free tier, see [docs/deploy-demo.md](docs/deploy-demo.md).
 
 ## How it works
 
@@ -111,7 +111,11 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu && pip instal
 python -m training.build_dataset --out data
 python -m training.train --data data --out models/injection-deberta
 python -m training.evaluate --model models/injection-deberta --data data --out reports
+python -m training.export_onnx --model models/injection-deberta --out models/injection-onnx
 ```
+
+`export_onnx.py` writes an int8 ONNX model that the gateway serves on ONNX Runtime without
+PyTorch (`pip install -e ".[onnx]"`); point a policy's `injection.model` at its directory.
 
 The same pipeline runs on GitHub Actions (**Train injection classifier**, manual trigger) and
 publishes metrics to the job summary. To enable the rail, add it to a policy after `rules`:
@@ -141,7 +145,8 @@ Never commit `.env`.
 - [x] **Week 2 (code):** dataset build with cross-source dedupe and a held-out source, DeBERTa fine-tuning, evaluation vs. rules baseline with PR curve, injection rail
 - [x] **Week 2 (results v1):** trained and benchmarked; see Results
 - [x] **Week 2 (results v2):** retrained with hard-negative benign data; tricky-benign false positives 18.7% → 4.7%
-- [x] Demo page (playground + live monitor) and automatic public deploy to Google Cloud Run
+- [x] Demo page (playground + live monitor) and automatic public deploy (GHCR image, Render free tier)
+- [x] ONNX int8 export served without PyTorch; demo fits in 512 MB
 - [ ] **Week 3:** output rails (PII redaction, toxicity), Redis rate limiting and cache, garak scan of bare LLM vs. SafeGate, latency benchmark
 - [ ] **Week 4:** AWS deployment, results table, architecture diagram, demo video; stretch: ONNX export, baseline comparison, NLI grounding check
 

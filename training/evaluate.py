@@ -210,6 +210,9 @@ def main() -> None:
     parser.add_argument("--policy", type=Path, default=Path("policies/default.yaml"))
     parser.add_argument("--out", type=Path, default=Path("reports"))
     parser.add_argument("--max-length", type=int, default=256)
+    parser.add_argument(
+        "--max-windows", type=int, default=None, help="Window cap per prompt, as in serving"
+    )
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -220,7 +223,9 @@ def main() -> None:
     }
     val_texts, val_labels = read_jsonl(args.data / "val.jsonl")
 
-    classifier = InjectionClassifier(args.model, max_length=args.max_length)
+    classifier = InjectionClassifier(
+        args.model, max_length=args.max_length, max_windows=args.max_windows
+    )
     threshold = best_f1_threshold(val_labels, np.array(classifier(val_texts)))
     scores = {name: np.array(classifier(texts)) for name, (texts, _) in sets.items()}
 
@@ -238,6 +243,8 @@ def main() -> None:
     stats = json.loads(stats_path.read_text()) if stats_path.exists() else {}
     report = {
         "model": args.model,
+        "backend": classifier.backend,
+        "max_windows": args.max_windows,
         "threshold": round(threshold, 4),
         "holdout_source": stats.get("holdout_source", "unknown"),
         "sizes": {name: len(texts) for name, (texts, _) in sets.items()},

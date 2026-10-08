@@ -1,32 +1,14 @@
 from functools import lru_cache
 
 from presidio_analyzer import AnalyzerEngine
-from presidio_analyzer.nlp_engine import NlpEngineProvider, SpacyNlpEngine
+from presidio_analyzer.nlp_engine import NlpEngineProvider
 from presidio_anonymizer import AnonymizerEngine
 
 from app.rails.base import Action, Verdict
 
-BLANK_MODEL = "blank"
-
-
-class _BlankSpacyEngine(SpacyNlpEngine):
-    """A tokenizer-only spaCy pipeline. Pattern recognizers (email, phone, SSN, card, IBAN, IP)
-    still work; NER-based entities such as PERSON do not, and context words no longer boost
-    scores. It saves roughly 100 MB, which matters on small hosts."""
-
-    def load(self) -> None:
-        import spacy
-
-        self.nlp = {"en": spacy.blank("en")}
-
 
 @lru_cache(maxsize=2)
 def _engines(spacy_model: str) -> tuple[AnalyzerEngine, AnonymizerEngine]:
-    if spacy_model == BLANK_MODEL:
-        engine = _BlankSpacyEngine(models=[{"lang_code": "en", "model_name": BLANK_MODEL}])
-        engine.load()
-        analyzer = AnalyzerEngine(nlp_engine=engine, supported_languages=["en"])
-        return analyzer, AnonymizerEngine()
     provider = NlpEngineProvider(
         nlp_configuration={
             "nlp_engine_name": "spacy",

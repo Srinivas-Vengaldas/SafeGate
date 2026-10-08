@@ -15,7 +15,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import shutil
 from pathlib import Path
 
 from app.rails.classifier import ONNX_FILE
@@ -52,7 +51,15 @@ def externalize(model_dir: Path) -> Path:
     return path
 
 
-def export(model_dir: Path, out: Path, opset: int = 17, quantize: bool = True) -> Path:
+def export(
+    model_dir: Path | str,
+    out: Path,
+    opset: int = 17,
+    quantize: bool = True,
+    multi_label: bool = False,
+) -> Path:
+    """Export a local checkpoint or Hugging Face Hub model id. `multi_label` marks models that
+    score each label with its own sigmoid (e.g. Detoxify), so serving does not softmax them."""
     import torch
     from onnxruntime.quantization import QuantType, quantize_dynamic
     from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -91,15 +98,22 @@ def export(model_dir: Path, out: Path, opset: int = 17, quantize: bool = True) -
         fp32.replace(out / ONNX_FILE)
     externalize(out)
     tokenizer.save_pretrained(out)
-    shutil.copy(model_dir / "config.json", out / "config.json")
+    if multi_label:
+        model.config.problem_type = "multi_label_classification"
+    model.config.save_pretrained(out)
     return out / ONNX_FILE
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", type=Path, default=Path("models/injection-deberta"))
+    parser.add_argument(
+        "--model", default="models/injection-deberta", help="Checkpoint directory or Hub id"
+    )
     parser.add_argument("--out", type=Path, default=Path("models/injection-onnx"))
     parser.add_argument("--no-quantize", action="store_true", help="Keep fp32 weights")
+    parser.add_argument(
+        "--multi-label", action="store_true", help="Score labels with independent sigmoids"
+    )
     parser.add_argument(
         "--externalize", type=Path, metavar="DIR", help="Only externalize an exported model"
     )
@@ -107,7 +121,9 @@ def main() -> None:
     if args.externalize:
         path = externalize(args.externalize)
     else:
-        path = export(args.model, args.out, quantize=not args.no_quantize)
+        path = export(
+            args.model, args.out, quantize=not args.no_quantize, multi_label=args.multi_label
+        )
     size = (path.stat().st_size + (path.parent / DATA_FILE).stat().st_size) / 1e6
     print(f"wrote {path} and {DATA_FILE} ({size:.1f} MB)")
 

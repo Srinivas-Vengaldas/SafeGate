@@ -1,0 +1,51 @@
+name: Export toxicity model
+
+# Exports an off-the-shelf toxicity classifier (Detoxify's "original" model by default) to an
+# int8 ONNX model for the output toxicity rail, sanity-checks it, and uploads it as the
+# toxicity-onnx artifact, which the benchmark workflow uses.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Hugging Face model id
+        default: unitary/toxic-bert
+      threshold:
+        description: Block threshold used by the sanity check
+        default: "0.5"
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[train,onnx]"
+      - name: Export to int8 ONNX
+        env:
+          MODEL: ${{ inputs.model }}
+        run: |
+          python -m training.export_onnx --model "$MODEL" --out models/toxicity-onnx --multi-label
+          echo "$MODEL" > models/toxicity-onnx/SOURCE
+      - name: Sanity check
+        env:
+          THRESHOLD: ${{ inputs.threshold }}
+        run: |
+          set -o pipefail
+          python -m training.check_toxicity models/toxicity-onnx --threshold "$THRESHOLD" \
+            --out models/toxicity-onnx/check.json | tee -a "$GITHUB_STEP_SUMMARY"
+      # Uploaded even when the sanity check fails, so the scores can be inspected.
+      - if: success() || failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: toxicity-onnx
+          path: models/toxicity-onnx/

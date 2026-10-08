@@ -17,7 +17,7 @@ Open `http://localhost:8000/` after `docker compose up`. The page has two panels
 - **Live monitor:** request counts by verdict, blocks and redactions per rail, p50/p95 screening
   latency, and the most recent audit-log entries, refreshed every few seconds.
 
-To host it publicly for free, see [docs/deploy-demo.md](docs/deploy-demo.md).
+To host it publicly on the Google Cloud Run free tier, see [docs/deploy-demo.md](docs/deploy-demo.md).
 
 ## How it works
 
@@ -141,7 +141,7 @@ Never commit `.env`.
 - [x] **Week 2 (code):** dataset build with cross-source dedupe and a held-out source, DeBERTa fine-tuning, evaluation vs. rules baseline with PR curve, injection rail
 - [x] **Week 2 (results v1):** trained and benchmarked; see Results
 - [x] **Week 2 (results v2):** retrained with hard-negative benign data; tricky-benign false positives 18.7% → 4.7%
-- [x] Demo page (playground + live monitor) and one-click public deploy to Hugging Face Spaces
+- [x] Demo page (playground + live monitor) and automatic public deploy to Google Cloud Run
 - [ ] **Week 3:** output rails (PII redaction, toxicity), Redis rate limiting and cache, garak scan of bare LLM vs. SafeGate, latency benchmark
 - [ ] **Week 4:** AWS deployment, results table, architecture diagram, demo video; stretch: ONNX export, baseline comparison, NLI grounding check
 

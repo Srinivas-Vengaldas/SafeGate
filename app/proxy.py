@@ -17,9 +17,14 @@ OutputScreen = Callable[[list[str]], Awaitable[list[PipelineResult]]]
 OnComplete = Callable[[], Awaitable[None]]
 
 
-def withheld_message(result: PipelineResult) -> str:
+DEFAULT_WITHHELD = (
+    "I'm sorry, but I can't share that response. (Withheld by SafeGate: {rail} rail.)"
+)
+
+
+def withheld_message(result: PipelineResult, template: str = DEFAULT_WITHHELD) -> str:
     rail = result.blocked_by.rail if result.blocked_by else "policy"
-    return f"[Response withheld by SafeGate: blocked by the {rail} rail.]"
+    return template.format(rail=rail)
 
 
 def _upstream_headers(request: Request, api_key: str) -> dict[str, str]:
@@ -48,6 +53,7 @@ async def forward_chat_completion(
     request_id: str,
     screen: OutputScreen | None = None,
     on_complete: OnComplete | None = None,
+    withheld_template: str = DEFAULT_WITHHELD,
 ) -> Response:
     """Forward a chat completion upstream and return its response.
 
@@ -64,7 +70,7 @@ async def forward_chat_completion(
             upstream = await client.post(url, json=body, headers=headers)
             content = upstream.content
             if screen and upstream.status_code == 200:
-                content = await _screen_completion(content, screen)
+                content = await _screen_completion(content, screen, withheld_template)
             return Response(
                 content=content,
                 status_code=upstream.status_code,
@@ -87,7 +93,7 @@ async def forward_chat_completion(
         try:
             if screen and upstream.status_code == 200:
                 raw = b"".join([chunk async for chunk in upstream.aiter_raw()])
-                yield await _screen_stream(raw, screen)
+                yield await _screen_stream(raw, screen, withheld_template)
             else:
                 # Streaming passthrough: bytes go to the client as they arrive.
                 async for chunk in upstream.aiter_raw():
@@ -104,7 +110,7 @@ async def forward_chat_completion(
     )
 
 
-async def _screen_completion(content: bytes, screen: OutputScreen) -> bytes:
+async def _screen_completion(content: bytes, screen: OutputScreen, template: str) -> bytes:
     try:
         completion = json.loads(content)
         choices = completion["choices"]
@@ -123,7 +129,7 @@ async def _screen_completion(content: bytes, screen: OutputScreen) -> bytes:
     changed = False
     for message, result in zip(targets, results, strict=True):
         if result.blocked_by:
-            message["content"] = withheld_message(result)
+            message["content"] = withheld_message(result, template)
             choice = next(c for c in choices if c.get("message") is message)
             choice["finish_reason"] = "content_filter"
             changed = True
@@ -133,7 +139,7 @@ async def _screen_completion(content: bytes, screen: OutputScreen) -> bytes:
     return json.dumps(completion).encode() if changed else content
 
 
-async def _screen_stream(raw: bytes, screen: OutputScreen) -> bytes:
+async def _screen_stream(raw: bytes, screen: OutputScreen, template: str) -> bytes:
     """Screen a buffered SSE stream. Replays it unchanged when every choice is allowed;
     otherwise emits an equivalent stream carrying the redacted or withheld text."""
     texts: dict[int, list[str]] = {}
@@ -164,7 +170,7 @@ async def _screen_stream(raw: bytes, screen: OutputScreen) -> bytes:
     choices = []
     for index, result in pairs:
         if result.blocked_by:
-            choices.append((index, withheld_message(result), "content_filter"))
+            choices.append((index, withheld_message(result, template), "content_filter"))
         else:
             choices.append((index, result.text, finish.get(index) or "stop"))
     return sse_completion(choices, model=first.get("model", ""), completion_id=first.get("id", ""))

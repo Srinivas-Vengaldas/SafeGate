@@ -140,7 +140,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if blocked:
             await _record(request_id, policy.name, "chat", screened_text, results, screen_ms)
             if policy.on_block == "refuse":
-                return _refusal(body, request_id, blocked)
+                return _refusal(body, request_id, policy.refusal_message.format(rail=blocked.rail))
             return _openai_error(
                 400,
                 f"request blocked by SafeGate ({blocked.rail}): {blocked.reason}",
@@ -179,6 +179,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             request_id=request_id,
             screen=screen_output if loaded.output_rails else None,
             on_complete=record,
+            withheld_template=policy.withheld_message,
         )
 
     @app.get("/v1/decisions")
@@ -297,9 +298,8 @@ def _client_id(request: Request, trust_forwarded_for: bool) -> str:
     return "ip:" + (request.client.host if request.client else "unknown")
 
 
-def _refusal(body: dict, request_id: str, blocked) -> Response:
+def _refusal(body: dict, request_id: str, text: str) -> Response:
     """A normal completion explaining the block, for policies with on_block: refuse."""
-    text = f"[Request blocked by SafeGate: {blocked.rail} rail ({blocked.reason}).]"
     model = str(body.get("model") or "safegate")
     completion_id = f"chatcmpl-safegate-{request_id}"
     headers = {"x-safegate-request-id": request_id}

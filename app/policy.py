@@ -60,6 +60,13 @@ class Policy(BaseModel):
     # whose message explains the block (finish_reason "content_filter"), for clients that treat
     # errors as outages.
     on_block: Literal["error", "refuse"] = "error"
+    # Reply text for refused requests and withheld replies; {rail} names the blocking rail.
+    refusal_message: str = (
+        "I'm sorry, but I can't help with that request. (Blocked by SafeGate: {rail} rail.)"
+    )
+    withheld_message: str = (
+        "I'm sorry, but I can't share that response. (Withheld by SafeGate: {rail} rail.)"
+    )
     rate_limit: RateLimitConfig | None = None
 
     def build_input_rails(self, spacy_model: str) -> list[Rail]:

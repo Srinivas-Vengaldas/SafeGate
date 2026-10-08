@@ -42,14 +42,20 @@ jobs:
               -d "{\"text\": \"$text\"}" | python3 -c "import json, sys; print(json.load(sys.stdin)['action'])"
           done
           # The decision log is in Postgres and the verdict cache in Redis.
-          test "$(docker compose exec -T db psql -U safegate -tAc 'select count(*) from decisions')" -ge 3
-          test "$(docker compose exec -T redis redis-cli --scan --pattern 'safegate:verdict:*' | wc -l)" -ge 3
+          decisions=$(docker compose exec -T db psql -U safegate -d safegate -tAc 'select count(*) from decisions')
+          cached=$(docker compose exec -T redis redis-cli --scan --pattern 'safegate:verdict:*' | wc -l)
+          echo "decisions in Postgres: $decisions, cached verdicts in Redis: $cached"
+          test "$decisions" -ge 3 && test "$cached" -ge 3
           # Prometheus scrapes the gateway and Grafana serves the provisioned dashboard.
-          for i in $(seq 1 30); do
-            curl -sf 'localhost:9090/api/v1/query?query=up{job="safegate"}' | grep -q '"1"\]' && break; sleep 2
-          done
-          curl -sf 'localhost:9090/api/v1/query?query=up{job="safegate"}' | grep -q '"1"\]'
-          curl -sf localhost:3000/api/dashboards/uid/safegate | python3 -c "import json, sys; print(json.load(sys.stdin)['dashboard']['title'])"
+          up() {
+            curl -sf 'localhost:9090/api/v1/query?query=up%7Bjob%3D%22safegate%22%7D' \
+              | python3 -c "import json, sys; r = json.load(sys.stdin)['data']['result']; print(r[0]['value'][1] if r else 'missing')"
+          }
+          for i in $(seq 1 30); do [ "$(up)" = 1 ] && break; sleep 2; done
+          echo "Prometheus target up: $(up)"
+          test "$(up)" = 1
+          curl -sf localhost:3000/api/dashboards/uid/safegate \
+            | python3 -c "import json, sys; print('Grafana dashboard:', json.load(sys.stdin)['dashboard']['title'])"
       - name: Show logs on failure
         if: failure()
         run: docker compose --profile monitoring logs --tail 50

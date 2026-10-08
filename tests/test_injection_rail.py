@@ -106,7 +106,7 @@ def test_window_cap_keeps_first_and_last_windows():
 
 
 def test_cpu_budget_follows_the_container_quota(tmp_path, monkeypatch):
-    from app.rails import injection
+    from app.rails import classifier as injection
 
     cpu_max = tmp_path / "cpu.max"
     monkeypatch.setattr(injection, "CGROUP_CPU_MAX", cpu_max)

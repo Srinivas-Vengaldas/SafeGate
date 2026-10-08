@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, NamedTuple
 
 import yaml
 from pydantic import BaseModel, Field
@@ -9,6 +9,7 @@ from app.rails.base import Rail
 from app.rails.injection import InjectionRail
 from app.rails.pii import PiiRail
 from app.rails.rules import RulesRail
+from app.rails.toxicity import ToxicityRail
 
 _APP_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -34,16 +35,42 @@ class InjectionConfig(BaseModel):
     max_windows: int | None = 4  # first and last windows of very long prompts
 
 
+class ToxicityConfig(BaseModel):
+    model: str  # local directory or Hugging Face Hub id
+    threshold: float = 0.5
+    labels: list[str] | None = None  # None watches every label except a negative class
+    max_length: int = 256
+    max_windows: int | None = 4
+
+
+class RateLimitConfig(BaseModel):
+    requests: int = 60
+    per_seconds: int = 60
+
+
 class Policy(BaseModel):
     name: str = "default"
     # Message roles whose content is screened. System prompts come from the app and are trusted.
     screen_roles: list[str] = Field(default_factory=lambda: ["user"])
     input_rails: dict[str, Any] = Field(default_factory=dict)
+    # Screen the model's reply before the client sees it. Streams are buffered when set.
+    output_rails: dict[str, Any] = Field(default_factory=dict)
+    # How a blocked chat request is answered: an OpenAI-style 400 error, or a normal completion
+    # whose message explains the block (finish_reason "content_filter"), for clients that treat
+    # errors as outages.
+    on_block: Literal["error", "refuse"] = "error"
+    rate_limit: RateLimitConfig | None = None
 
     def build_input_rails(self, spacy_model: str) -> list[Rail]:
+        return self._build(self.input_rails, "input", spacy_model)
+
+    def build_output_rails(self, spacy_model: str) -> list[Rail]:
+        return self._build(self.output_rails, "output", spacy_model)
+
+    def _build(self, section: dict[str, Any], stage: str, spacy_model: str) -> list[Rail]:
         rails: list[Rail] = []
         # dict preserves YAML order, so the policy file decides rail order.
-        for rail_name, cfg in self.input_rails.items():
+        for rail_name, cfg in section.items():
             cfg = cfg or {}
             if rail_name == "rules":
                 rails.append(RulesRail(**RulesConfig(**cfg).model_dump()))
@@ -51,9 +78,17 @@ class Policy(BaseModel):
                 rails.append(PiiRail(**PiiConfig(**cfg).model_dump(), spacy_model=spacy_model))
             elif rail_name == "injection":
                 rails.append(InjectionRail(**InjectionConfig(**cfg).model_dump()))
+            elif rail_name == "toxicity":
+                rails.append(ToxicityRail(**ToxicityConfig(**cfg).model_dump()))
             else:
-                raise ValueError(f"unknown input rail {rail_name!r} in policy {self.name!r}")
+                raise ValueError(f"unknown {stage} rail {rail_name!r} in policy {self.name!r}")
         return rails
+
+
+class LoadedPolicy(NamedTuple):
+    policy: Policy
+    input_rails: list[Rail]
+    output_rails: list[Rail]
 
 
 class PolicyRegistry:
@@ -62,17 +97,21 @@ class PolicyRegistry:
     def __init__(self, policy_dir: str | Path, spacy_model: str) -> None:
         self.policy_dir = Path(policy_dir)
         self.spacy_model = spacy_model
-        self._cache: dict[str, tuple[Policy, list[Rail]]] = {}
+        self._cache: dict[str, LoadedPolicy] = {}
 
-    def _load(self, name: str) -> tuple[Policy, list[Rail]] | None:
+    def _load(self, name: str) -> LoadedPolicy | None:
         path = self.policy_dir / f"{name}.yaml"
         if not path.is_file():
             return None
         data = yaml.safe_load(path.read_text()) or {}
         policy = Policy(name=name, **data)
-        return policy, policy.build_input_rails(self.spacy_model)
+        return LoadedPolicy(
+            policy,
+            policy.build_input_rails(self.spacy_model),
+            policy.build_output_rails(self.spacy_model),
+        )
 
-    def get(self, app: str | None) -> tuple[Policy, list[Rail]]:
+    def get(self, app: str | None) -> LoadedPolicy:
         name = app if app and _APP_ID.match(app) else "default"
         if name not in self._cache:
             loaded = self._load(name)

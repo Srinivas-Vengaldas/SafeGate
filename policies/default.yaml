@@ -23,3 +23,27 @@ input_rails:
       - CREDIT_CARD
       - IBAN_CODE
       - IP_ADDRESS
+
+# Rails run on the model's reply before the client sees it. With any output rail set, streamed
+# replies are buffered, screened, then replayed, so time to first token becomes the full reply.
+output_rails:
+  pii:
+    mode: redact
+    threshold: 0.4
+    entities:
+      - EMAIL_ADDRESS
+      - PHONE_NUMBER
+      - US_SSN
+      - CREDIT_CARD
+  # toxicity:                       # Detoxify's model exported to ONNX; see docs/toxicity.md
+  #   model: models/toxicity-onnx
+  #   threshold: 0.5
+
+# Blocked chat requests get an OpenAI-style 400 error (error), or a normal completion whose
+# message explains the block with finish_reason "content_filter" (refuse).
+on_block: error
+
+# Per client (API key, else IP address) and app. Backed by Redis when SAFEGATE_REDIS_URL is set.
+# rate_limit:
+#   requests: 60
+#   per_seconds: 60

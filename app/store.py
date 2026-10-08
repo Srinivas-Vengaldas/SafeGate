@@ -72,18 +72,18 @@ class DecisionStore:
         screen_ms: float,
     ) -> None:
         verdicts = [
-            {k: v for k, v in asdict(verdict).items() if k != "redacted_text"}
-            for result in results
-            for verdict in result.verdicts
+            {**{k: v for k, v in asdict(verdict).items() if k != "redacted_text"}, "stage": r.stage}
+            for r in results
+            for verdict in r.verdicts
         ]
-        blocked = next((r.blocked_by for r in results if r.blocked_by), None)
+        blocker = next((r for r in results if r.blocked_by), None)
         row = Decision(
             request_id=request_id,
             created_at=datetime.now(UTC),
             app=app,
             endpoint=endpoint,
             action=overall_action(results).value,
-            blocked_by=blocked.rail if blocked else None,
+            blocked_by=_rail_label(blocker.blocked_by.rail, blocker.stage) if blocker else None,
             input_sha256=hashlib.sha256(input_text.encode()).hexdigest(),
             screen_ms=round(screen_ms, 3),
             verdicts=verdicts,
@@ -138,7 +138,7 @@ class DecisionStore:
                 blocks_by_rail[row.blocked_by] = blocks_by_rail.get(row.blocked_by, 0) + 1
             for verdict in row.verdicts:
                 if verdict.get("action") == "redact":
-                    rail = verdict.get("rail", "?")
+                    rail = _rail_label(verdict.get("rail", "?"), verdict.get("stage", "input"))
                     redactions_by_rail[rail] = redactions_by_rail.get(rail, 0) + 1
         return {
             "total": total or 0,
@@ -151,6 +151,11 @@ class DecisionStore:
                 "p95": _percentile(latencies, 0.95),
             },
         }
+
+
+def _rail_label(rail: str, stage: str) -> str:
+    """Output rails are labelled "output:<rail>" so they don't merge with input rails."""
+    return rail if stage == "input" else f"{stage}:{rail}"
 
 
 def _percentile(sorted_values: list[float], q: float) -> float | None:

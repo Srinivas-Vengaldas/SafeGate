@@ -18,7 +18,7 @@ import argparse
 import shutil
 from pathlib import Path
 
-from app.rails.injection import ONNX_FILE
+from app.rails.classifier import ONNX_FILE
 
 DATA_FILE = ONNX_FILE + ".data"
 # ONNX Runtime memory-maps external weights only when each one starts at an offset aligned to

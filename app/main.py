@@ -17,9 +17,7 @@ from app import metrics
 from app.config import Settings, get_settings
 from app.pipeline import PipelineResult, overall_action, run_rails
 from app.policy import PolicyRegistry
-from app.proxy import forward_chat_completion
-from app.rails.injection import InjectionRail
-from app.rails.pii import PiiRail
+from app.proxy import completion_json, forward_chat_completion, sse_completion
 from app.store import DecisionStore
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -31,9 +29,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.policies = PolicyRegistry(settings.policy_dir, settings.spacy_model)
-        _, rails = app.state.policies.get("default")
-        for rail in rails:
-            if isinstance(rail, PiiRail | InjectionRail):
+        default = app.state.policies.get("default")
+        for rail in default.input_rails + default.output_rails:
+            if hasattr(rail, "warm_up"):
                 rail.warm_up()  # load models now, not on the first request
         app.state.store = DecisionStore(settings.database_url)
         await app.state.store.init()
@@ -63,8 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/policy")
     async def policy_info(x_safegate_app: str | None = Header(default=None)) -> dict[str, Any]:
         """The active policy, so the demo can show which rails run and in what order."""
-        policy, _ = app.state.policies.get(x_safegate_app)
-        return policy.model_dump()
+        return app.state.policies.get(x_safegate_app).policy.model_dump()
 
     @app.get("/healthz")
     async def healthz() -> dict[str, Any]:
@@ -82,10 +79,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         """Screen text with the input rails without calling an LLM."""
         request_id = str(uuid.uuid4())
-        policy, rails = app.state.policies.get(x_safegate_app)
+        policy, input_rails, output_rails = app.state.policies.get(x_safegate_app)
+        rails = output_rails if body.stage == "output" else input_rails
         started = time.perf_counter()
-        # Rails are CPU-bound (spaCy, later the classifier): keep them off the event loop.
-        result = await asyncio.to_thread(run_rails, rails, body.text)
+        # Rails are CPU-bound (spaCy, classifiers): keep them off the event loop.
+        result = await asyncio.to_thread(run_rails, rails, body.text, body.stage)
         screen_ms = (time.perf_counter() - started) * 1000
         await _record(request_id, policy.name, "check", body.text, [result], screen_ms)
         return {
@@ -112,16 +110,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 400, "'messages' must be a list", "invalid_request_error", request_id
             )
 
-        policy, rails = app.state.policies.get(x_safegate_app)
+        policy, input_rails, output_rails = app.state.policies.get(x_safegate_app)
         started = time.perf_counter()
         results, screened_text = await asyncio.to_thread(
-            _screen_messages, body["messages"], policy.screen_roles, rails
+            _screen_messages, body["messages"], policy.screen_roles, input_rails
         )
         screen_ms = (time.perf_counter() - started) * 1000
-        await _record(request_id, policy.name, "chat", screened_text, results, screen_ms)
 
         blocked = next((r.blocked_by for r in results if r.blocked_by), None)
         if blocked:
+            await _record(request_id, policy.name, "chat", screened_text, results, screen_ms)
+            if policy.on_block == "refuse":
+                return _refusal(body, request_id, blocked)
             return _openai_error(
                 400,
                 f"request blocked by SafeGate ({blocked.rail}): {blocked.reason}",
@@ -129,6 +129,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 request_id,
                 code=blocked.rail,
             )
+
+        output_results: list[PipelineResult] = []
+        output_ms = 0.0
+
+        async def screen_output(texts: list[str]) -> list[PipelineResult]:
+            nonlocal output_ms
+            started = time.perf_counter()
+            screened = await asyncio.to_thread(
+                lambda: [run_rails(output_rails, text, "output") for text in texts]
+            )
+            output_ms = (time.perf_counter() - started) * 1000
+            output_results.extend(screened)
+            return screened
+
+        async def record() -> None:
+            await _record(
+                request_id,
+                policy.name,
+                "chat",
+                screened_text,
+                results + output_results,
+                screen_ms + output_ms,
+            )
+
         return await forward_chat_completion(
             app.state.http,
             request,
@@ -136,6 +160,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             base_url=settings.upstream_base_url,
             api_key=settings.upstream_api_key,
             request_id=request_id,
+            screen=screen_output if output_rails else None,
+            on_complete=record,
         )
 
     @app.get("/v1/decisions")
@@ -183,6 +209,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 class CheckRequest(BaseModel):
     text: str
+    # "output" screens text as a model reply, with the policy's output rails.
+    stage: Literal["input", "output"] = "input"
 
 
 def _screen_messages(
@@ -219,6 +247,26 @@ def _screen_messages(
             if result.blocked_by:
                 return results, "\n".join(texts)
     return results, "\n".join(texts)
+
+
+def _refusal(body: dict, request_id: str, blocked) -> Response:
+    """A normal completion explaining the block, for policies with on_block: refuse."""
+    text = f"[Request blocked by SafeGate: {blocked.rail} rail ({blocked.reason}).]"
+    model = str(body.get("model") or "safegate")
+    completion_id = f"chatcmpl-safegate-{request_id}"
+    headers = {"x-safegate-request-id": request_id}
+    if body.get("stream"):
+        return Response(
+            sse_completion([(0, text, "content_filter")], model=model, completion_id=completion_id),
+            media_type="text/event-stream",
+            headers=headers,
+        )
+    return JSONResponse(
+        completion_json(
+            text, model=model, completion_id=completion_id, finish_reason="content_filter"
+        ),
+        headers=headers,
+    )
 
 
 def _verdict_json(v) -> dict[str, Any]:

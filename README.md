@@ -183,8 +183,8 @@ What this shows:
   Most of the 7 prompts it still flags talk about ignoring or forgetting earlier text, or about a
   bot's instructions and rules, which is genuinely close to real attacks. Any training prompt that nearly matched the tricky-benign set
   was removed first, so that set still measures unseen prompts.
-- **Long prompts are slow.** p95 latency comes from multi-window jailbreak prompts; ONNX export
-  and an input-length cap are planned.
+- **Long prompts are slow.** p95 latency comes from multi-window jailbreak prompts. The served
+  ONNX model cuts it by about 40% and caps each prompt at its first and last windows.
 
 Operating point: the threshold is chosen on validation data (0.47). Raising it trades recall for
 fewer false positives:
@@ -194,6 +194,24 @@ fewer false positives:
 | 0.47 (default) | 87.2% | 4.7% |
 | 0.90 | 83.8% | 2.0% |
 | 0.99 | 78.2% | 0.7% |
+
+**Served model (ONNX, int8).** The same v2 model exported to ONNX with int8 weights and scored as
+the gateway serves it (at most 4 windows per prompt). Full report:
+[reports/v2-onnx/metrics.md](reports/v2-onnx/metrics.md).
+
+| Metric | PyTorch fp32 | ONNX int8 |
+| --- | ---: | ---: |
+| Held-out recall | 87.2% | 83.8% |
+| Tricky-benign FPR | 4.7% | 3.3% |
+| Test false-positive rate | 0.3% | 0.2% |
+| CPU latency per prompt, p50 / p95 (same runner) | 65 / 343 ms | 43 / 209 ms |
+| Weights on disk | about 540 MB | 172 MB |
+| Serving image needs PyTorch | yes | no |
+
+Quantization cuts latency by about a third (p50) to two fifths (p95). Its validation-chosen
+threshold lands higher (0.975), so it blocks a little less: at 0.5 the int8 model reaches 89.9%
+held-out recall with 5.3% tricky-benign FPR. The whole demo container (gateway, PII rail and
+classifier) runs at about 460 MB, inside a 512 MB free-tier limit.
 
 ![Precision-recall curve on the test split](reports/v2/pr_curve.png)
 

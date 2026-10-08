@@ -34,15 +34,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p /tmp/demo
-          cp policies/default.yaml /tmp/demo/policy.yaml
           # Newest successful training run that exported an ONNX model.
           for run_id in $(gh run list --workflow train.yml --status success --limit 20 \
               --json databaseId --jq '.[].databaseId'); do
             if gh run download "$run_id" --name injection-onnx --dir /tmp/demo/model 2>/dev/null; then
               gh run download "$run_id" --name reports --dir /tmp/reports
               threshold=$(python -c "import json; print(json.load(open('/tmp/reports/onnx/metrics.json'))['threshold'])")
-              printf '  injection:\n    model: models/injection-onnx\n    threshold: %s\n    max_windows: 4\n' \
-                "$threshold" >> /tmp/demo/policy.yaml
               echo "Using the classifier from training run $run_id (threshold $threshold)"
               # Models exported before weights moved to a memory-mapped file get converted here.
               if [ ! -f /tmp/demo/model/model.onnx.data ]; then
@@ -56,8 +53,11 @@ jobs:
             echo "No exported classifier yet; the demo runs the rules and PII rails only"
             mkdir -p /tmp/demo/model
           fi
+          pip install --quiet pyyaml
+          python deploy/demo_policy.py policies/default.yaml /tmp/demo/policy.yaml \
+            ${threshold:+--injection-threshold "$threshold"}
           cp deploy/Dockerfile.demo /tmp/demo/Dockerfile
-          tail -5 /tmp/demo/policy.yaml
+          cat /tmp/demo/policy.yaml
 
       - uses: docker/login-action@v3
         with:

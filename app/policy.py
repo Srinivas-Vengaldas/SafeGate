@@ -1,3 +1,4 @@
+import hashlib
 import re
 from pathlib import Path
 from typing import Any, Literal, NamedTuple
@@ -89,6 +90,7 @@ class LoadedPolicy(NamedTuple):
     policy: Policy
     input_rails: list[Rail]
     output_rails: list[Rail]
+    fingerprint: str  # changes whenever the policy file does, so cached verdicts expire with it
 
 
 class PolicyRegistry:
@@ -103,12 +105,13 @@ class PolicyRegistry:
         path = self.policy_dir / f"{name}.yaml"
         if not path.is_file():
             return None
-        data = yaml.safe_load(path.read_text()) or {}
-        policy = Policy(name=name, **data)
+        source = path.read_text()
+        policy = Policy(name=name, **(yaml.safe_load(source) or {}))
         return LoadedPolicy(
             policy,
             policy.build_input_rails(self.spacy_model),
             policy.build_output_rails(self.spacy_model),
+            hashlib.sha256(f"{name}\0{source}".encode()).hexdigest()[:16],
         )
 
     def get(self, app: str | None) -> LoadedPolicy:

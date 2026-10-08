@@ -9,3 +9,5 @@ COPY --chown=safegate policy.yaml /srv/policies/default.yaml
 
 # Tokenizer-only spaCy pipeline: pattern-based PII detection still works and it saves ~80 MB.
 ENV SAFEGATE_SPACY_MODEL=blank
+# Render's proxy sets X-Forwarded-For, so the rate limit can count visitors individually.
+ENV SAFEGATE_TRUST_FORWARDED_FOR=true

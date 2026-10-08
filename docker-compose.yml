@@ -8,10 +8,13 @@ services:
         required: false
     environment:
       SAFEGATE_DATABASE_URL: postgresql+asyncpg://safegate:safegate@db:5432/safegate
+      SAFEGATE_REDIS_URL: redis://redis:6379/0
     volumes:
       - ./policies:/srv/policies:ro
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   db:
@@ -26,6 +29,40 @@ services:
       test: ["CMD-SHELL", "pg_isready -U safegate"]
       interval: 5s
       retries: 10
+
+  # Rate-limit counters and cached verdicts, shared by every gateway replica.
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  # `docker compose --profile monitoring up` adds Prometheus and a Grafana dashboard at
+  # http://localhost:3000 (no login).
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: [monitoring]
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    profiles: [monitoring]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/safegate.json
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
 
 volumes:
   pgdata:

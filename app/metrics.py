@@ -18,3 +18,7 @@ SCREEN_LATENCY = Histogram(
     ["endpoint"],
     buckets=(0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0),
 )
+CACHE_LOOKUPS = Counter(
+    "safegate_verdict_cache_total", "Verdict cache lookups", ["stage", "result"]
+)
+RATE_LIMITED = Counter("safegate_rate_limited_total", "Requests rejected by rate limiting", ["app"])

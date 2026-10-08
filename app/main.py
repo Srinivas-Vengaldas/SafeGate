@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -16,8 +17,9 @@ from pydantic import BaseModel
 from app import metrics
 from app.config import Settings, get_settings
 from app.pipeline import PipelineResult, overall_action, run_rails
-from app.policy import PolicyRegistry
+from app.policy import LoadedPolicy, PolicyRegistry
 from app.proxy import completion_json, forward_chat_completion, sse_completion
+from app.ratelimit import RateLimiter, VerdictCache, make_backend
 from app.store import DecisionStore
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -36,8 +38,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.store = DecisionStore(settings.database_url)
         await app.state.store.init()
         app.state.http = httpx.AsyncClient(timeout=settings.upstream_timeout_s)
+        backend = make_backend(settings.redis_url, settings.cache_max_entries)
+        app.state.limiter = RateLimiter(backend)
+        app.state.cache = VerdictCache(backend, settings.cache_ttl_s)
         app.state.ready = True
         yield
+        await backend.close()
         await app.state.http.aclose()
         await app.state.store.close()
 
@@ -75,15 +81,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/v1/check")
     async def check(
-        body: CheckRequest, x_safegate_app: str | None = Header(default=None)
-    ) -> dict[str, Any]:
+        body: CheckRequest, request: Request, x_safegate_app: str | None = Header(default=None)
+    ) -> Any:
         """Screen text with the input rails without calling an LLM."""
         request_id = str(uuid.uuid4())
-        policy, input_rails, output_rails = app.state.policies.get(x_safegate_app)
-        rails = output_rails if body.stage == "output" else input_rails
+        loaded = app.state.policies.get(x_safegate_app)
+        policy = loaded.policy
+        if limited := await _rate_limit(request, loaded, request_id):
+            return limited
         started = time.perf_counter()
-        # Rails are CPU-bound (spaCy, classifiers): keep them off the event loop.
-        result = await asyncio.to_thread(run_rails, rails, body.text, body.stage)
+        result = await _screen(loaded, body.text, body.stage)
         screen_ms = (time.perf_counter() - started) * 1000
         await _record(request_id, policy.name, "check", body.text, [result], screen_ms)
         return {
@@ -110,11 +117,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 400, "'messages' must be a list", "invalid_request_error", request_id
             )
 
-        policy, input_rails, output_rails = app.state.policies.get(x_safegate_app)
+        loaded = app.state.policies.get(x_safegate_app)
+        policy = loaded.policy
+        if limited := await _rate_limit(request, loaded, request_id):
+            return limited
         started = time.perf_counter()
-        results, screened_text = await asyncio.to_thread(
-            _screen_messages, body["messages"], policy.screen_roles, input_rails
-        )
+        results: list[PipelineResult] = []
+        texts: list[str] = []
+        # Screen each text part of each message in screen_roles, writing redactions back in
+        # place, and stop at the first block.
+        for holder, key in _text_parts(body["messages"], policy.screen_roles):
+            texts.append(holder[key])
+            result = await _screen(loaded, holder[key], "input")
+            results.append(result)
+            holder[key] = result.text
+            if result.blocked_by:
+                break
+        screened_text = "\n".join(texts)
         screen_ms = (time.perf_counter() - started) * 1000
 
         blocked = next((r.blocked_by for r in results if r.blocked_by), None)
@@ -136,9 +155,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async def screen_output(texts: list[str]) -> list[PipelineResult]:
             nonlocal output_ms
             started = time.perf_counter()
-            screened = await asyncio.to_thread(
-                lambda: [run_rails(output_rails, text, "output") for text in texts]
-            )
+            screened = [await _screen(loaded, text, "output") for text in texts]
             output_ms = (time.perf_counter() - started) * 1000
             output_results.extend(screened)
             return screened
@@ -160,7 +177,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             base_url=settings.upstream_base_url,
             api_key=settings.upstream_api_key,
             request_id=request_id,
-            screen=screen_output if output_rails else None,
+            screen=screen_output if loaded.output_rails else None,
             on_complete=record,
         )
 
@@ -184,6 +201,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             until=until,
         )
         return {"items": items, "limit": limit, "offset": offset}
+
+    async def _screen(loaded: LoadedPolicy, text: str, stage: str) -> PipelineResult:
+        key = VerdictCache.key(loaded.fingerprint, stage, text)
+        if cached := await app.state.cache.get(key):
+            metrics.CACHE_LOOKUPS.labels(stage, "hit").inc()
+            return cached
+        metrics.CACHE_LOOKUPS.labels(stage, "miss").inc()
+        rails = loaded.output_rails if stage == "output" else loaded.input_rails
+        # Rails are CPU-bound (spaCy, classifiers): keep them off the event loop.
+        result = await asyncio.to_thread(run_rails, rails, text, stage)
+        await app.state.cache.set(key, result)
+        return result
+
+    async def _rate_limit(
+        request: Request, loaded: LoadedPolicy, request_id: str
+    ) -> JSONResponse | None:
+        limit = loaded.policy.rate_limit
+        if limit is None:
+            return None
+        client = _client_id(request, settings.trust_forwarded_for)
+        allowance = await app.state.limiter.hit(
+            f"{loaded.policy.name}:{client}", limit.requests, limit.per_seconds
+        )
+        if allowance.allowed:
+            return None
+        metrics.RATE_LIMITED.labels(loaded.policy.name).inc()
+        response = _openai_error(
+            429,
+            f"rate limit exceeded: {limit.requests} requests per {limit.per_seconds} s",
+            "rate_limit_exceeded",
+            request_id,
+            code="rate_limit",
+        )
+        response.headers["retry-after"] = str(allowance.reset_s)
+        response.headers["x-ratelimit-limit-requests"] = str(allowance.limit)
+        response.headers["x-ratelimit-remaining-requests"] = "0"
+        return response
 
     async def _record(
         request_id: str,
@@ -213,40 +267,34 @@ class CheckRequest(BaseModel):
     stage: Literal["input", "output"] = "input"
 
 
-def _screen_messages(
-    messages: list[Any], roles: list[str], rails: list
-) -> tuple[list[PipelineResult], str]:
-    """Screen each text part of each message in `roles`, writing redactions back in place.
-
-    Stops at the first block. Returns the per-part results and the concatenated input text.
-    """
-    results: list[PipelineResult] = []
-    texts: list[str] = []
+def _text_parts(messages: list[Any], roles: list[str]) -> list[tuple[dict, str]]:
+    """(holder, key) for each text part of each message in `roles`: string contents and the
+    text parts of multimodal contents."""
+    parts: list[tuple[dict, str]] = []
     for message in messages:
         if not isinstance(message, dict) or message.get("role") not in roles:
             continue
         content = message.get("content")
         if isinstance(content, str):
-            parts = [(message, "content")]
+            parts.append((message, "content"))
         elif isinstance(content, list):
-            parts = [
+            parts += [
                 (part, "text")
                 for part in content
-                if isinstance(part, dict) and part.get("type") == "text"
+                if isinstance(part, dict)
+                and part.get("type") == "text"
+                and isinstance(part.get("text"), str)
             ]
-        else:
-            continue
-        for holder, key in parts:
-            text = holder.get(key)
-            if not isinstance(text, str):
-                continue
-            texts.append(text)
-            result = run_rails(rails, text)
-            results.append(result)
-            holder[key] = result.text
-            if result.blocked_by:
-                return results, "\n".join(texts)
-    return results, "\n".join(texts)
+    return parts
+
+
+def _client_id(request: Request, trust_forwarded_for: bool) -> str:
+    """Who a request counts against: a hash of its API key, else its address."""
+    if auth := request.headers.get("authorization"):
+        return "key:" + hashlib.sha256(auth.encode()).hexdigest()[:16]
+    if trust_forwarded_for and (forwarded := request.headers.get("x-forwarded-for")):
+        return "ip:" + forwarded.split(",")[0].strip()
+    return "ip:" + (request.client.host if request.client else "unknown")
 
 
 def _refusal(body: dict, request_id: str, blocked) -> Response:

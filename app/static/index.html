@@ -153,7 +153,7 @@ async function run() {
   try {
     const res = await fetch("/v1/check", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text }) });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || res.statusText);
+    if (!res.ok) throw new Error((data.error && data.error.message) || data.detail || res.statusText);
     render(data);
     refresh();
   } catch (e) {

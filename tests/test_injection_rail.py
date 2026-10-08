@@ -103,3 +103,20 @@ def test_window_cap_keeps_first_and_last_windows():
     assert clf._limit(list(range(10))) == [0, 1, 9]
     clf.max_windows = None
     assert clf._limit(list(range(10))) == list(range(10))
+
+
+def test_cpu_budget_follows_the_container_quota(tmp_path, monkeypatch):
+    from app.rails import injection
+
+    cpu_max = tmp_path / "cpu.max"
+    monkeypatch.setattr(injection, "CGROUP_CPU_MAX", cpu_max)
+    sixteen = set(range(16))
+    monkeypatch.setattr(injection.os, "sched_getaffinity", lambda pid: sixteen, raising=False)
+    cpu_max.write_text("10000 100000\n")  # 0.1 CPU
+    assert injection.cpu_budget() == 1
+    cpu_max.write_text("250000 100000\n")
+    assert injection.cpu_budget() == 3
+    cpu_max.write_text("max 100000\n")
+    assert injection.cpu_budget() == 16
+    cpu_max.unlink()
+    assert injection.cpu_budget() == 16

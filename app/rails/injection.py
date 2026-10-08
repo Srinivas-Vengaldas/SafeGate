@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import math
+import os
 from collections.abc import Callable, Sequence
 from functools import lru_cache
 from pathlib import Path
@@ -13,6 +15,24 @@ Scorer = Callable[[Sequence[str]], list[float]]
 
 
 ONNX_FILE = "model.onnx"
+CGROUP_CPU_MAX = Path("/sys/fs/cgroup/cpu.max")
+
+
+def cpu_budget() -> int:
+    """CPUs this process can actually use. In a container this is the CPU quota, not the host's
+    core count: Render's free tier grants 0.1 CPU on a many-core host, and one inference thread
+    per host core would burn that quota in parallel and leave every request throttled."""
+    if hasattr(os, "sched_getaffinity"):
+        cpus = len(os.sched_getaffinity(0))
+    else:
+        cpus = os.cpu_count() or 1
+    try:
+        quota, period = CGROUP_CPU_MAX.read_text().split()
+        if quota != "max":
+            cpus = min(cpus, math.ceil(int(quota) / int(period)))
+    except (OSError, ValueError):
+        pass
+    return max(1, cpus)
 
 
 class InjectionClassifier:
@@ -65,8 +85,7 @@ class InjectionClassifier:
         # the int8 model needs roughly a quarter of the memory, which matters on small hosts.
         options.enable_cpu_mem_arena = False
         options.add_session_config_entry("session.disable_prepacking", "1")
-        if threads:
-            options.intra_op_num_threads = threads
+        options.intra_op_num_threads = threads or cpu_budget()
         # Constant folding would dequantize the int8 embedding table back to fp32 (+170 MB).
         # Weights exported to model.onnx.data are memory-mapped rather than copied.
         session = ort.InferenceSession(
@@ -112,8 +131,7 @@ class InjectionClassifier:
         import torch
         from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-        if threads:
-            torch.set_num_threads(threads)
+        torch.set_num_threads(threads or cpu_budget())
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)
         model = AutoModelForSequenceClassification.from_pretrained(model_path).eval()
 

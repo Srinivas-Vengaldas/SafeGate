@@ -13,8 +13,8 @@ To fit in 512 MB, the demo image:
   (email, phone, SSN, card, IBAN, IP) but drops name detection.
 
 The **Deploy demo** workflow builds this image on every push to `main` and after every
-successful training run, checks that it starts and screens prompts under a 512 MB limit with a
-server peak below 440 MB, and only then pushes it to `ghcr.io/srinivas-vengaldas/safegate:latest`.
+successful training run, checks that it starts and screens long prompts under a 448 MB limit,
+leaving headroom under 512 MB, and only then pushes it to `ghcr.io/srinivas-vengaldas/safegate:latest`.
 
 ## One-time setup
 

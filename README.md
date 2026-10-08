@@ -211,7 +211,9 @@ the gateway serves it (at most 4 windows per prompt). Full report:
 Quantization cuts latency by about a third (p50) to two fifths (p95). Its validation-chosen
 threshold lands higher (0.975), so it blocks a little less: at 0.5 the int8 model reaches 89.9%
 held-out recall with 5.3% tricky-benign FPR. The whole demo container (gateway, PII rail and
-classifier) runs at about 460 MB, inside a 512 MB free-tier limit.
+classifier) peaks at about 390 MB of process memory, under a 512 MB free-tier limit, because
+ONNX Runtime memory-maps the weights instead of copying them onto the heap (copying peaked at
+575 MB).
 
 ![Precision-recall curve on the test split](reports/v2/pr_curve.png)
 

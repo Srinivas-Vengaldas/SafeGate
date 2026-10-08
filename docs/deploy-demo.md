@@ -6,13 +6,15 @@ Render's free tier (512 MB of memory, no payment details needed).
 To fit in 512 MB, the demo image:
 
 - serves the classifier as an int8 ONNX model on ONNX Runtime, with no PyTorch;
+- keeps the weights in a page-aligned `model.onnx.data` file that ONNX Runtime memory-maps, so
+  loading them does not briefly double the heap;
 - scores at most 4 windows (the first and last) of very long prompts;
 - uses a tokenizer-only spaCy pipeline for PII, which keeps every pattern-based entity
   (email, phone, SSN, card, IBAN, IP) but drops name detection.
 
 The **Deploy demo** workflow builds this image on every push to `main` and after every
-successful training run, checks that it starts and screens a prompt under a 512 MB limit, and
-pushes it to `ghcr.io/srinivas-vengaldas/safegate:latest`.
+successful training run, checks that it starts and screens prompts under a 512 MB limit with a server peak below
+440 MB, and only then pushes it to `ghcr.io/srinivas-vengaldas/safegate:latest`.
 
 ## One-time setup
 

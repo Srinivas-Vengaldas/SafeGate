@@ -68,6 +68,7 @@ class InjectionClassifier:
         if threads:
             options.intra_op_num_threads = threads
         # Constant folding would dequantize the int8 embedding table back to fp32 (+170 MB).
+        # Weights exported to model.onnx.data are memory-mapped rather than copied.
         session = ort.InferenceSession(
             str(path / ONNX_FILE),
             options,

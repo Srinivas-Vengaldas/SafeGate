@@ -44,6 +44,11 @@ jobs:
               printf '  injection:\n    model: models/injection-onnx\n    threshold: %s\n    max_windows: 4\n' \
                 "$threshold" >> /tmp/demo/policy.yaml
               echo "Using the classifier from training run $run_id (threshold $threshold)"
+              # Models exported before weights moved to a memory-mapped file get converted here.
+              if [ ! -f /tmp/demo/model/model.onnx.data ]; then
+                pip install --quiet onnx numpy
+                python -m training.export_onnx --externalize /tmp/demo/model
+              fi
               break
             fi
           done

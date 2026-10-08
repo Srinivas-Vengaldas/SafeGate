@@ -67,6 +67,7 @@ def test_onnx_export_matches_pytorch_scores(tmp_path):
     model_dir = make_tiny_classifier(tmp_path / "tiny", words, init_range=1.0)
     export(model_dir, tmp_path / "onnx")
     export(model_dir, tmp_path / "onnx-fp32", quantize=False)
+    assert (tmp_path / "onnx" / "model.onnx.data").stat().st_size > 0
 
     texts = [
         "hello world",

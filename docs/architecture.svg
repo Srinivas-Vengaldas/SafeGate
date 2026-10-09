@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 480" width="1000" height="480" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#3b4252"/>
+    </marker>
+    <marker id="r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b42318"/>
+    </marker>
+    <style>
+      .box{fill:#ffffff;stroke:#3b4252;stroke-width:1.2}
+      .rail{fill:#eef2ff;stroke:#4f46e5;stroke-width:1.2}
+      .orail{fill:#ecfdf3;stroke:#12805c;stroke-width:1.2}
+      .t{fill:#1f2937;text-anchor:middle}
+      .s{fill:#4b5563;text-anchor:middle;font-size:11px}
+      .h{fill:#111827;font-weight:bold;font-size:12px}
+      .l{fill:#374151;font-size:11px}
+      .e{stroke:#3b4252;stroke-width:1.4;fill:none}
+      .d{stroke:#6b7280;stroke-width:1.2;fill:none;stroke-dasharray:4 4}
+    </style>
+  </defs>
+  <rect width="1000" height="480" fill="#ffffff"/>
+
+  <!-- client and LLM -->
+  <rect class="box" x="20" y="50" width="120" height="270" rx="8"/>
+  <text class="t" x="80" y="175" font-weight="bold">Client app</text>
+  <text class="s" x="80" y="193">any OpenAI SDK,</text>
+  <text class="s" x="80" y="208">base_url = SafeGate</text>
+  <rect class="box" x="860" y="50" width="120" height="270" rx="8"/>
+  <text class="t" x="920" y="183" font-weight="bold">LLM provider</text>
+  <text class="s" x="920" y="201">OpenAI, Ollama, ...</text>
+
+  <!-- gateway frame -->
+  <rect x="165" y="18" width="670" height="340" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.2"/>
+  <text class="h" x="180" y="38">SafeGate gateway (FastAPI)</text>
+
+  <!-- request row -->
+  <rect class="box" x="185" y="60" width="110" height="64" rx="6"/>
+  <text class="t" x="240" y="86">Rate limit</text>
+  <text class="s" x="240" y="102">per key or IP;</text>
+  <text class="s" x="240" y="116">verdict cache</text>
+
+  <rect x="310" y="46" width="505" height="92" rx="8" fill="none" stroke="#4f46e5" stroke-dasharray="3 3"/>
+  <text class="l" x="320" y="60" fill="#4f46e5">Input rails, cheapest first</text>
+  <rect class="rail" x="320" y="68" width="105" height="56" rx="6"/>
+  <text class="t" x="372" y="92">rules</text><text class="s" x="372" y="108">&lt;1 ms</text>
+  <rect class="rail" x="443" y="68" width="105" height="56" rx="6"/>
+  <text class="t" x="495" y="92">secrets</text><text class="s" x="495" y="108">&lt;1 ms</text>
+  <rect class="rail" x="566" y="68" width="105" height="56" rx="6"/>
+  <text class="t" x="618" y="92">PII</text><text class="s" x="618" y="108">Presidio</text>
+  <rect class="rail" x="689" y="68" width="116" height="56" rx="6"/>
+  <text class="t" x="747" y="92">injection</text><text class="s" x="747" y="108">DeBERTa, ONNX int8</text>
+
+  <path class="e" d="M140,92 H183" marker-end="url(#a)"/>
+  <path class="e" d="M295,92 H318" marker-end="url(#a)"/>
+  <path class="e" d="M425,96 H441" marker-end="url(#a)"/>
+  <path class="e" d="M548,96 H564" marker-end="url(#a)"/>
+  <path class="e" d="M671,96 H687" marker-end="url(#a)"/>
+  <path class="e" d="M805,96 H858" marker-end="url(#a)"/>
+  <text class="l" x="832" y="86" text-anchor="middle">allow</text>
+
+  <!-- block path -->
+  <rect x="320" y="170" width="250" height="52" rx="6" fill="#fef3f2" stroke="#b42318" stroke-width="1.2"/>
+  <text class="t" x="445" y="192" fill="#b42318">Blocked: HTTP 400 or a refusal</text>
+  <text class="s" x="445" y="208">the LLM is never called</text>
+  <path d="M445,138 V168" stroke="#b42318" stroke-width="1.4" fill="none" marker-end="url(#r)"/>
+  <text class="l" x="452" y="157" fill="#b42318">any rail blocks</text>
+  <path d="M320,196 H142" stroke="#b42318" stroke-width="1.4" fill="none" marker-end="url(#r)"/>
+
+  <!-- response row -->
+  <rect x="430" y="248" width="385" height="92" rx="8" fill="none" stroke="#12805c" stroke-dasharray="3 3"/>
+  <text class="l" x="440" y="262" fill="#12805c">Output rails, on the model's reply</text>
+  <rect class="orail" x="689" y="270" width="116" height="56" rx="6"/>
+  <text class="t" x="747" y="294">secrets</text><text class="s" x="747" y="310">&lt;1 ms</text>
+  <rect class="orail" x="566" y="270" width="105" height="56" rx="6"/>
+  <text class="t" x="618" y="294">PII</text><text class="s" x="618" y="310">redaction</text>
+  <rect class="orail" x="443" y="270" width="105" height="56" rx="6"/>
+  <text class="t" x="495" y="294">toxicity</text><text class="s" x="495" y="310">Detoxify, ONNX</text>
+  <path class="e" d="M858,298 H807" marker-end="url(#a)"/>
+  <path class="e" d="M689,298 H673" marker-end="url(#a)"/>
+  <path class="e" d="M566,298 H550" marker-end="url(#a)"/>
+  <path class="e" d="M443,298 H142" marker-end="url(#a)"/>
+  <text class="l" x="290" y="290" text-anchor="middle">reply, redacted or withheld</text>
+
+  <!-- stores -->
+  <path class="d" d="M260,358 V398"/>
+  <path class="d" d="M500,358 V398"/>
+  <path class="d" d="M740,358 V398"/>
+  <rect class="box" x="180" y="398" width="160" height="56" rx="6"/>
+  <text class="t" x="260" y="422">Redis</text><text class="s" x="260" y="438">rate counters, verdict cache</text>
+  <rect class="box" x="410" y="398" width="180" height="56" rx="6"/>
+  <text class="t" x="500" y="422">PostgreSQL</text><text class="s" x="500" y="438">audit log, inputs hashed</text>
+  <rect class="box" x="660" y="398" width="160" height="56" rx="6"/>
+  <text class="t" x="740" y="422">Prometheus + Grafana</text><text class="s" x="740" y="438">/metrics, dashboard</text>
+</svg>

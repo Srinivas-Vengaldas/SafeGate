@@ -1,0 +1,55 @@
+name: Demo video
+
+# Records a captioned two-minute walkthrough of the public demo image (eval/demo_video.py) and
+# publishes it as the demo-video artifact and on the demo-video/<run id> branch.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Start the demo image
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/safegate:latest"
+          docker run -d --name demo -e PORT=8000 -p 8000:8000 "$image"
+          for i in $(seq 1 90); do curl -sf localhost:8000/healthz && break; sleep 2; done
+      - name: Record
+        run: |
+          pip install playwright==1.48.0
+          python -m playwright install --with-deps chromium
+          python eval/demo_video.py --url http://localhost:8000 --out demo
+          # H.264 MP4 plays everywhere (LinkedIn, GitHub, slides); the WebM is kept as recorded.
+          ffmpeg -loglevel error -y -i demo/safegate-demo.webm -c:v libx264 -preset slow -crf 23 \
+            -pix_fmt yuv420p -movflags +faststart demo/safegate-demo.mp4
+          ls -la demo
+      - if: failure()
+        run: docker logs --tail 80 demo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo-video
+          path: demo/
+      - name: Commit the video to a branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan "demo-video/${{ github.run_id }}"
+          git rm -rq --cached .
+          git add -f demo/safegate-demo.mp4
+          git commit -m "Demo video from run ${{ github.run_id }}"
+          git push origin "demo-video/${{ github.run_id }}"

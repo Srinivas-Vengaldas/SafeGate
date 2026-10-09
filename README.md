@@ -27,19 +27,11 @@ per-rail latency, verdict-cache hit ratio, rate-limited requests).
 
 ## How it works
 
-```
-client (any OpenAI SDK)
-   │  base_url = http://safegate:8000/v1
-   ▼
-SafeGate ── rate limit (Redis) ── input rails ──► rules ─► secrets ─► PII (Presidio) ─► injection classifier
-   │                                  │ block → 400 safegate_blocked (or a refusal reply), LLM never called
-   │                                  │ redact → redacted text is what the LLM sees
-   ▼                                  ▼
-LLM provider ──► output rails ──► secrets ─► PII redaction ─► toxicity (Detoxify, ONNX) ──► client
-   │                 │ block → reply withheld, finish_reason "content_filter"
-   ▼                 ▼
-decision log (PostgreSQL, input hashed, never stored raw) + Prometheus metrics + verdict cache (Redis)
-```
+![SafeGate architecture: input rails, LLM call, output rails, and the stores behind them](docs/architecture.svg)
+
+Input rails run cheapest first, so most attacks stop before the classifier runs and every
+blocked prompt stops before the LLM is called. The same chain, with output rails, screens the
+model's reply before the client sees it.
 
 Each rail returns `allow`, `block` or `redact` with a score and a reason. A block stops the chain;
 a redaction feeds the redacted text to every later rail and to the LLM (or, on the way back, to

@@ -82,6 +82,9 @@ class SequenceClassifier:
         # the int8 model needs roughly a quarter of the memory, which matters on small hosts.
         options.enable_cpu_mem_arena = False
         options.add_session_config_entry("session.disable_prepacking", "1")
+        # Idle intra-op threads normally spin for work. With two models (injection, toxicity)
+        # plus spaCy in one process they steal each other's cores; measured 2-4x slower.
+        options.add_session_config_entry("session.intra_op.allow_spinning", "0")
         options.intra_op_num_threads = threads or cpu_budget()
         # Constant folding would dequantize the int8 embedding table back to fp32 (+170 MB).
         # Weights exported to model.onnx.data are memory-mapped rather than copied.

@@ -1,0 +1,124 @@
+{
+  "Document rails (default context rails)": {
+    "counts": {
+      "clean": 400,
+      "gandalf": 150,
+      "addressed": 80,
+      "unaddressed": 30,
+      "sample": 39
+    },
+    "blocked": {
+      "clean": 0,
+      "gandalf": 42,
+      "addressed": 30,
+      "unaddressed": 0,
+      "sample": 0
+    },
+    "rates": {
+      "clean": 0.0,
+      "gandalf": 0.28,
+      "addressed": 0.375,
+      "unaddressed": 0.0,
+      "sample": 0.0
+    },
+    "caught_all": 0.27692307692307694,
+    "false_drop": 0.0,
+    "sample_drop": 0.0,
+    "blocked_by": {
+      "rules": 72
+    },
+    "p50_ms": 2.0545250000054693
+  },
+  "Prompt rails (rules + classifier)": {
+    "counts": {
+      "clean": 400,
+      "gandalf": 150,
+      "addressed": 80,
+      "unaddressed": 30,
+      "sample": 39
+    },
+    "blocked": {
+      "clean": 3,
+      "gandalf": 84,
+      "addressed": 32,
+      "unaddressed": 0,
+      "sample": 23
+    },
+    "rates": {
+      "clean": 0.0075,
+      "gandalf": 0.56,
+      "addressed": 0.4,
+      "unaddressed": 0.0,
+      "sample": 0.5897435897435898
+    },
+    "caught_all": 0.4461538461538462,
+    "false_drop": 0.0075,
+    "sample_drop": 0.5897435897435898,
+    "blocked_by": {
+      "injection": 118,
+      "rules": 24
+    },
+    "p50_ms": 89.9914520000209
+  },
+  "Classifier only": {
+    "counts": {
+      "clean": 400,
+      "gandalf": 150,
+      "addressed": 80,
+      "unaddressed": 30,
+      "sample": 39
+    },
+    "blocked": {
+      "clean": 3,
+      "gandalf": 82,
+      "addressed": 31,
+      "unaddressed": 0,
+      "sample": 23
+    },
+    "rates": {
+      "clean": 0.0075,
+      "gandalf": 0.5466666666666666,
+      "addressed": 0.3875,
+      "unaddressed": 0.0,
+      "sample": 0.5897435897435898
+    },
+    "caught_all": 0.4346153846153846,
+    "false_drop": 0.0075,
+    "sample_drop": 0.5897435897435898,
+    "blocked_by": {
+      "injection": 139
+    },
+    "p50_ms": 88.6378499999978
+  },
+  "Document rails + classifier": {
+    "counts": {
+      "clean": 400,
+      "gandalf": 150,
+      "addressed": 80,
+      "unaddressed": 30,
+      "sample": 39
+    },
+    "blocked": {
+      "clean": 3,
+      "gandalf": 88,
+      "addressed": 52,
+      "unaddressed": 0,
+      "sample": 23
+    },
+    "rates": {
+      "clean": 0.0075,
+      "gandalf": 0.5866666666666667,
+      "addressed": 0.65,
+      "unaddressed": 0.0,
+      "sample": 0.5897435897435898
+    },
+    "caught_all": 0.5384615384615384,
+    "false_drop": 0.0075,
+    "sample_drop": 0.5897435897435898,
+    "blocked_by": {
+      "injection": 94,
+      "rules": 72
+    },
+    "p50_ms": 88.1979069999943
+  }
+}

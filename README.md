@@ -137,6 +137,11 @@ question -> input rails -> embed -> retrieve top k -> input rails on each passag
   and look instead for phrasings aimed at an AI that happens to read the text ("note to the AI
   assistant", "if you are an AI", "ignore previous instructions"), alongside the secrets and PII
   rails. A classifier trained on documents with embedded attacks is on the roadmap.
+- **Grounding:** every sentence of the answer is checked against the sources it cites: it must
+  cite one, every number in it must appear there, and most of its words too. Claims that fail are
+  listed under the answer ("numbers not in the source: 2019"). It is a word-level check, fast and
+  model-free; it catches made-up figures and claims pinned on the wrong source, not paraphrases
+  that keep the words and change the meaning.
 - **Generation:** the prompt tells the model the sources are data, not instructions, and to cite
   them as `[n]`; citations of sources that don't exist are removed. The answer goes through the
   output rails like any reply.
@@ -261,7 +266,8 @@ Never commit `.env`.
 - [x] **Week 4:** results table, architecture diagram, demo video, baseline comparison with ProtectAI's model; ONNX export (done in Week 2), public deploy on Render's free tier
 - [x] Image, screenshot and document screening (OCR, PDF, Word); guarded RAG with retrieval-time screening
 - [x] Poisoned-retrieval benchmark: document rails, classifier and both, on Wikipedia passages
-- [ ] Next: training data for document-embedded instructions, run both injection models together, an NLI grounding check on replies
+- [x] Grounding check on RAG answers: citations, numbers and words checked against cited sources
+- [ ] Next: training data for document-embedded instructions, run both injection models together, an NLI model for the grounding check
 
 ## Results
 
@@ -425,6 +431,24 @@ What this shows:
   remaining defences; training on documents with embedded instructions is the next step.
 - **Caveats.** The addressed attacks and the document rules were written by the same person
   (rules first), so that column is optimistic. One run, one seed, 660 passages.
+
+### Grounding check
+
+[eval/grounding_eval.py](eval/grounding_eval.py) builds claims from the sample knowledge bases
+where the right answer is known, and cites each to one passage
+([reports/grounding/grounding.md](reports/grounding/grounding.md)):
+
+| Claim cited to a passage | Cases | Flagged as unsupported |
+| --- | ---: | ---: |
+| A sentence from that passage, verbatim | 144 | 0.0% |
+| The same, restated (a quarter of its words dropped, a connective added) | 144 | 0.0% |
+| The same sentence with one number changed | 54 | 98.1% |
+| A sentence from another passage of the same document | 127 | 91.3% |
+| A sentence from a different document | 144 | 97.9% |
+
+The cases are synthetic and the restatements keep the source's words, so this measures the
+failures the check targets (wrong figures, wrong attributions), not faithfulness to a free
+paraphrase; that needs an NLI model, which is on the roadmap.
 
 ### Gateway latency
 

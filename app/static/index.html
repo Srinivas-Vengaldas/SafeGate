@@ -100,6 +100,8 @@
   .answer { border-left: 3px solid var(--accent); padding: 8px 12px; background: var(--code); border-radius: 0 8px 8px 0;
             white-space: pre-wrap; overflow-wrap: anywhere; }
   .answer sup { color: var(--accent); font-weight: 700; }
+  .flagged { margin: 6px 0 0; padding-left: 20px; font-size: 14px; }
+  .flagged li { margin: 4px 0; overflow-wrap: anywhere; }
   .passage { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-top: 8px; font-size: 14px; }
   .passage.dropped { border-color: var(--block); background: var(--block-bg); }
   .passage .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-weight: 600; }
@@ -196,6 +198,7 @@
           <h3>Answer</h3>
           <div class="row"><span id="rag-action" class="badge"></span><span class="muted" id="rag-timing"></span></div>
           <div id="rag-answer" class="answer" style="margin-top:8px"></div>
+          <div id="rag-grounding"></div>
           <h3>Retrieved passages</h3>
           <div id="rag-passages"></div>
         </div>
@@ -444,6 +447,23 @@ function withCitations(text) {
     .replace(/\[(\d{1,2})\]/g, "<sup>[$1]</sup>");
 }
 
+function grounding(g) {
+  if (!g || !g.claims.length) return "";
+  const total = g.claims.length;
+  const flagged = g.claims.filter((c) => c.status !== "supported");
+  const head = flagged.length
+    ? `<span class="badge redact">check</span> ${g.supported} of ${total} claims are backed by the sources they cite.`
+    : `<span class="badge allow">grounded</span> All ${total} claims are backed by the sources they cite.`;
+  const items = flagged.map((c) => {
+    const why = c.status === "uncited" ? "no citation"
+      : [c.missing_numbers.length ? `numbers not in the source: ${c.missing_numbers.join(", ")}` : "",
+         c.overlap < 0.5 ? `most of its words are not in source ${c.citations.map((n) => `[${n}]`).join("")}` : ""]
+        .filter(Boolean).join("; ");
+    return `<li>${esc(c.text)} <span class="muted">(${esc(why)})</span></li>`;
+  }).join("");
+  return `<div class="muted" style="margin-top:8px">${head}</div>` + (items ? `<ul class="flagged">${items}</ul>` : "");
+}
+
 async function ask() {
   const question = $("rag-q").value.trim();
   if (!question) return;
@@ -471,6 +491,7 @@ async function ask() {
       error: `The LLM call failed (${d.error}). The screened passages are below.`,
     };
     $("rag-answer").innerHTML = d.answer ? withCitations(d.answer) : esc(messages[d.mode] || "");
+    $("rag-grounding").innerHTML = grounding(d.grounding);
     if (d.mode === "blocked") {
       const v = d.question.verdicts.find((v) => v.action === "block");
       if (v) $("rag-answer").innerHTML += `<br><span class="muted">${esc(v.rail)}: ${esc(v.reason)}</span>`;

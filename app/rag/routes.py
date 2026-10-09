@@ -32,6 +32,8 @@ from app.config import Settings
 from app.pipeline import PipelineResult, overall_action
 from app.policy import LoadedPolicy
 from app.rag.embed import Embedder, HashingEmbedder, UpstreamEmbedder
+from app.rag.grounding import check as check_grounding
+from app.rag.grounding import summary as grounding_summary
 from app.rag.service import (
     EMPTY,
     NOT_FOUND,
@@ -404,8 +406,12 @@ def add_rag_routes(
             text = loaded.policy.withheld_message.format(rail=answer.blocked_by.rail)
             cited: list[int] = []
             invalid: list[int] = []
+            grounding = None
         else:
             text, cited, invalid = check_citations(answer.text, sources)
+            grounding = grounding_summary(
+                check_grounding(text, {s.number: s.text for s in sources})
+            )
         return await finish(
             "answer",
             answer=text,
@@ -414,6 +420,7 @@ def add_rag_routes(
             citations=cited,
             invalid_citations=invalid,
             uncited=not cited and not answer.blocked_by,
+            grounding=grounding,
             model=model,
             llm_ms=llm_ms,
             answer_ms=round(llm_ms, 1),

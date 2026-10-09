@@ -1,0 +1,27 @@
+{
+  "supported (verbatim)": {
+    "n": 144,
+    "flagged": 0,
+    "rate": 0.0
+  },
+  "supported (restated)": {
+    "n": 144,
+    "flagged": 0,
+    "rate": 0.0
+  },
+  "wrong source": {
+    "n": 144,
+    "flagged": 141,
+    "rate": 0.9791666666666666
+  },
+  "wrong passage": {
+    "n": 127,
+    "flagged": 116,
+    "rate": 0.9133858267716536
+  },
+  "wrong number": {
+    "n": 54,
+    "flagged": 53,
+    "rate": 0.9814814814814815
+  }
+}

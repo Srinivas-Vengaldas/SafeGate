@@ -359,3 +359,45 @@ def test_reasoning_effort_is_dropped_when_a_model_rejects_it(settings):
 def test_an_empty_collection_says_so(client):
     body = client.post("/v1/rag/query", json={"question": "What is SafeGate?"}, headers=BOB).json()
     assert body["mode"] == "empty" and body["passages"] == []
+
+
+def test_grounding_flags_made_up_numbers_and_uncited_claims():
+    from app.rag.grounding import check
+
+    source = {1: "Employees accrue 20 days of paid time off per year and may carry over 5 days."}
+    claims = check(
+        "You get 20 days of paid time off each year [1]. You can carry over 12 days [1]. "
+        "Managers approve all requests within one business week.",
+        source,
+    )
+    assert [c.status for c in claims] == ["supported", "unsupported", "uncited"]
+    assert claims[1].missing_numbers == ["12"]
+
+
+@respx.mock
+def test_answers_carry_a_grounding_summary(client):
+    respx.post(f"{UPSTREAM}/chat/completions").mock(
+        return_value=completion("Full-time employees accrue 20 days of paid time off per year [1].")
+    )
+    client.post("/v1/rag/sample?name=handbook", headers=ALICE)
+    body = client.post(
+        "/v1/rag/query", json={"question": "How many vacation days do I get?"}, headers=ALICE
+    ).json()
+    assert body["grounding"]["supported"] == 1 and body["grounding"]["grounded"] == 1.0
+
+
+def test_grounding_eval_runs():
+    from eval.grounding_eval import build, evaluate
+
+    results = evaluate(build(1))
+    assert results["supported (verbatim)"]["rate"] == 0.0
+    assert results["wrong number"]["rate"] > 0.9
+
+
+def test_citations_after_the_full_stop_belong_to_that_sentence():
+    from app.rag.grounding import sentences
+
+    assert sentences("It runs on CPU. [1] It was trained in 2024. [2][3]") == [
+        "It runs on CPU [1].",
+        "It was trained in 2024 [2][3].",
+    ]

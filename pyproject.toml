@@ -63,7 +63,7 @@ build-backend = "setuptools.build_meta"
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["static/*", "rails/data/*"]
+app = ["static/*", "rails/data/*", "rag/knowledge/*"]
 
 [tool.ruff]
 line-length = 100

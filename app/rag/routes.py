@@ -19,7 +19,7 @@ import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -33,9 +33,9 @@ from app.policy import LoadedPolicy
 from app.rag.embed import Embedder, HashingEmbedder, UpstreamEmbedder
 from app.rag.service import (
     NOT_FOUND,
-    SAMPLE_DOCUMENTS,
-    SAMPLE_QUESTIONS,
+    SAMPLE_SETS,
     AnswerError,
+    SampleSet,
     Source,
     build_messages,
     check_citations,
@@ -82,7 +82,7 @@ class Rag:
             self._upstream = UpstreamEmbedder(
                 http, settings.rag_url, settings.rag_key, settings.rag_embed_model
             )
-        self._sample: tuple[list[list[str]], list[np.ndarray]] | None = None
+        self._samples: dict[str, tuple[SampleSet, list[np.ndarray]]] = {}
         self._lock = asyncio.Lock()
 
     async def embed(self, texts: list[str]) -> np.ndarray:
@@ -101,13 +101,13 @@ class Rag:
                         return vectors
         return await self.embedder.embed(texts)
 
-    async def sample(self) -> tuple[list[list[str]], list[np.ndarray]]:
-        """Passages and vectors of the sample documents, embedded once per process."""
-        if self._sample is None:
-            passages = [split_passages(text) for _, text, _ in SAMPLE_DOCUMENTS]
-            vectors = [await self.embed(p) for p in passages]
-            self._sample = (passages, vectors)
-        return self._sample
+    async def sample(self, name: str) -> tuple[SampleSet, list[np.ndarray]]:
+        """A sample knowledge base and its vectors, embedded once per process."""
+        if name not in self._samples:
+            sample = SAMPLE_SETS[name]()
+            vectors = [await self.embed(d.passages) for d in sample.documents]
+            self._samples[name] = (sample, vectors)
+        return self._samples[name]
 
     @property
     def can_answer(self) -> bool:
@@ -163,7 +163,6 @@ def add_rag_routes(
             "embedder": rag().embedder.name,
             "answers": rag().can_answer,
             "model": settings.rag_chat_model if rag().can_answer else None,
-            "sample_questions": SAMPLE_QUESTIONS,
         }
 
     @app.post("/v1/rag/documents", tags=["rag"])
@@ -221,21 +220,22 @@ def add_rag_routes(
     @app.post("/v1/rag/sample", tags=["rag"])
     async def load_sample(
         request: Request,
+        name: Literal["safegate", "handbook"] = "safegate",
         x_safegate_app: str | None = Header(default=None),
         x_safegate_collection: str | None = Header(default=None),
     ) -> dict[str, Any]:
-        """Replace the caller's documents with a sample company handbook. One of its documents
-        is planted with an injection and indexed without screening, to show retrieval-time
-        screening at work."""
+        """Replace the caller's documents with a sample knowledge base: SafeGate's own docs
+        (`safegate`) or a made-up company handbook (`handbook`). Each plants one document with
+        an injection, indexed without screening, to show retrieval-time screening at work."""
         loaded = app.state.policies.get(x_safegate_app)
-        name = collection_name(request, loaded, x_safegate_collection)
-        passages, vectors = await rag().sample()
-        rag().store.clear(name)
-        for (document, _, planted), texts, matrix in zip(
-            SAMPLE_DOCUMENTS, passages, vectors, strict=True
-        ):
-            rag().store.add(name, document, texts, matrix, unscreened=planted)
-        return {"documents": documents_json(name), "sample_questions": SAMPLE_QUESTIONS}
+        collection = collection_name(request, loaded, x_safegate_collection)
+        sample, vectors = await rag().sample(name)
+        rag().store.clear(collection)
+        for document, matrix in zip(sample.documents, vectors, strict=True):
+            rag().store.add(
+                collection, document.name, document.passages, matrix, unscreened=document.planted
+            )
+        return {"documents": documents_json(collection), "sample_questions": sample.questions}
 
     @app.delete("/v1/rag/documents/{document_id}", tags=["rag"])
     async def delete_document(

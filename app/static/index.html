@@ -175,7 +175,8 @@
         <h3>Knowledge base</h3>
         <ul class="docs" id="docs"><li class="empty">No documents yet.</li></ul>
         <div class="row">
-          <button type="button" class="secondary" id="rag-sample">Load sample handbook</button>
+          <button type="button" class="secondary" id="rag-sample">SafeGate docs</button>
+          <button type="button" class="secondary" id="rag-handbook">Company handbook</button>
           <input type="file" id="rag-file" multiple accept="image/*,.pdf,.docx,.txt,.md,.csv,.json" hidden>
           <button type="button" class="secondary" id="rag-upload">Upload files</button>
           <button type="button" class="secondary" id="rag-clear">Clear</button>
@@ -396,7 +397,7 @@ function renderDocs(docs) {
   $("docs").innerHTML = docs.length ? docs.map((d) =>
     `<li><span class="grow">${esc(d.name)} <span class="muted">${d.passages} passage(s)${d.screened ? "" : " · planted, not screened at upload"}</span></span>` +
     `<button type="button" data-id="${esc(d.id)}" aria-label="Remove ${esc(d.name)}">×</button></li>`).join("")
-    : `<li class="empty">No documents yet. Load the sample handbook or upload your own.</li>`;
+    : `<li class="empty">No documents yet. Load a sample or upload your own.</li>`;
   for (const b of $("docs").querySelectorAll("button"))
     b.onclick = async () => renderDocs((await ragFetch(`/v1/rag/documents/${b.dataset.id}`, { method: "DELETE" })).documents);
 }
@@ -414,8 +415,8 @@ function ragExamples(questions) {
 async function loadRag() {
   try {
     const d = await ragFetch("/v1/rag/documents");
-    renderDocs(d.documents);
-    ragExamples(d.sample_questions);
+    // First visit: start with SafeGate's own docs, so there is something to ask about.
+    if (!d.documents.length) await loadSample("safegate"); else renderDocs(d.documents);
     $("rag-mode").textContent = d.answers
       ? `Answers by ${d.model}; retrieval with ${d.embedder} embeddings.`
       : "No LLM key configured: you'll see the screened passages an LLM would receive.";
@@ -476,10 +477,13 @@ async function ask() {
   } finally { $("rag-ask").disabled = false; }
 }
 
-$("rag-sample").onclick = async () => {
-  const d = await ragFetch("/v1/rag/sample", { method: "POST" });
+async function loadSample(name) {
+  const d = await ragFetch(`/v1/rag/sample?name=${name}`, { method: "POST" });
   renderDocs(d.documents); ragExamples(d.sample_questions); $("rag-ingest").innerHTML = "";
-};
+  $("rag-result").hidden = true;
+}
+$("rag-sample").onclick = () => loadSample("safegate");
+$("rag-handbook").onclick = () => loadSample("handbook");
 $("rag-upload").onclick = () => $("rag-file").click();
 $("rag-file").onchange = async (e) => {
   const picked = [...e.target.files].filter((f) => f.size <= 10 * 1024 * 1024);

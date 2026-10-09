@@ -25,8 +25,9 @@ Open `http://localhost:8000/` after `docker compose up`. The page has three pane
 - **Playground:** type a prompt (or pick an example attack) and see each rail's verdict, score and
   reason, plus exactly what the LLM would receive after redaction. Switch to **Model reply** to
   run the output rails (PII redaction, toxicity) on a reply instead.
-- **Ask your documents:** a guarded RAG pipeline. Load the sample handbook (or upload your own
-  files) and ask a question; the page shows the answer with citations and every retrieved
+- **Ask your documents:** a guarded RAG pipeline. It starts with SafeGate's own documentation
+  as its knowledge base, so you can ask how SafeGate works (a made-up company handbook and your
+  own uploads work too); the page shows the answer with citations and every retrieved
   passage, including any dropped by the rails before they reached the prompt.
 - **Live monitor:** request counts by verdict, blocks and redactions per rail, p50/p95 screening
   latency, and the most recent audit-log entries, refreshed every few seconds.
@@ -83,7 +84,7 @@ explains the block with `finish_reason: "content_filter"`. Requests over a polic
 | `POST /v1/check` | Screen text, and optionally `files` (images or documents as data URLs), without calling an LLM; returns per-rail verdicts. `"stage": "output"` runs the output rails |
 | `POST /v1/rag/documents` | Screen a document (text, or a file as a data URL) and index it unless blocked; `GET` lists, `DELETE` removes. Scoped by `X-SafeGate-Collection` |
 | `POST /v1/rag/query` | Answer a question from the indexed documents, with rails on the question, each retrieved passage and the answer |
-| `POST /v1/rag/sample` | Load a sample company handbook, with one planted poisoned document |
+| `POST /v1/rag/sample` | Load a sample knowledge base: SafeGate's own docs (`?name=safegate`, default) or a company handbook (`?name=handbook`), each with one planted poisoned document |
 | `GET /v1/decisions` | Audit log; filters: `app`, `action`, `rail` (blocking rail), `since`, `until`, `limit`, `offset` |
 | `GET /v1/stats` | Dashboard aggregates over recent decisions: counts by verdict and rail, p50/p95 latency |
 | `GET /v1/policy` | The active policy (rails and their order) |
@@ -126,8 +127,8 @@ question -> input rails -> embed -> retrieve top k -> input rails on each passag
   indexed redacted.
 - **Retrieval:** passages are screened again before they enter the prompt, and any that fail are
   dropped. This is the defence against indirect injection: text that reached the index some other
-  way (a synced wiki, a shared drive, a document indexed before the policy changed). The sample
-  handbook plants one such document, indexed without screening, to show it being caught.
+  way (a synced wiki, a shared drive, a document indexed before the policy changed). Each sample
+  knowledge base plants one such document, indexed without screening, to show it being caught.
 - **Generation:** the prompt tells the model the sources are data, not instructions, and to cite
   them as `[n]`; citations of sources that don't exist are removed. The answer goes through the
   output rails like any reply.

@@ -9,6 +9,20 @@ import httpx
 import numpy as np
 
 _TOKEN = re.compile(r"[a-z0-9]+")
+# Words that carry no topic; without dropping them, "what is" questions match on "what is".
+_STOPWORDS = frozenset(
+    "a an and are as at be been but by can could did do does for from had has have how i if in "
+    "into is it its me my of on or our so than that the their them then there these this those "
+    "to was we were what when where which who whom why will with would you your".split()
+)
+
+
+def _stem(word: str) -> str:
+    """Crude suffix stripping, so "screened", "screening" and "screens" match."""
+    for suffix in ("ing", "ed", "es", "s"):
+        if len(word) > len(suffix) + 3 and word.endswith(suffix):
+            return word[: -len(suffix)]
+    return word
 
 
 class Embedder(Protocol):
@@ -35,7 +49,7 @@ class HashingEmbedder:
 
     def _vector(self, text: str) -> np.ndarray:
         vector = np.zeros(self.dim, dtype=np.float32)
-        words = _TOKEN.findall(text.lower())
+        words = [_stem(w) for w in _TOKEN.findall(text.lower()) if w not in _STOPWORDS]
         for feature in [*words, *(f"{a} {b}" for a, b in zip(words, words[1:], strict=False))]:
             digest = hashlib.blake2b(feature.encode(), digest_size=8).digest()
             index = int.from_bytes(digest[:4], "little") % self.dim

@@ -102,12 +102,12 @@ jobs:
           print('screenshot:', d['action'], d['screen_ms'], 'ms,', f['words_hidden'], 'words hidden')
           assert d['action'] == 'redact', d
           " | tee -a "$GITHUB_STEP_SUMMARY"
-          # Guarded RAG: the sample handbook's planted injection is dropped before the prompt.
+          # Guarded RAG: the sample docs' planted injection is dropped before the prompt.
           h='x-safegate-collection: smoke-test-1'
           curl -sf -X POST localhost:8000/v1/rag/sample -H "$h" > /dev/null
           curl -sf localhost:8000/v1/rag/query -H 'content-type: application/json' -H "$h" \
-            -d '{"question":"How do I reset my password?"}' \
-            | python3 -c "import json, sys; d = json.load(sys.stdin); dropped = [p['document'] for p in d['passages'] if p['action'] == 'block']; print('rag:', d['mode'], 'dropped', dropped, d['screen_ms'], 'ms'); assert dropped == ['vendor-faq.md'], d" \
+            -d '{"question":"Is SafeGate still maintained?"}' \
+            | python3 -c "import json, sys; d = json.load(sys.stdin); dropped = [p['document'] for p in d['passages'] if p['action'] == 'block']; print('rag:', d['mode'], 'dropped', dropped, d['screen_ms'], 'ms'); assert dropped == ['07-community-notes.md'], d" \
             | tee -a "$GITHUB_STEP_SUMMARY"
           docker stats --no-stream demo
           test "$(docker inspect -f '{{.State.OOMKilled}}' demo)" = false
@@ -119,6 +119,13 @@ jobs:
           test "$(docker inspect -f '{{.State.Running}}' demo)" = true
       - if: failure()
         run: docker logs --tail 80 demo
+
+      - name: Screen the sample knowledge bases with the demo policy
+        # Every passage must pass except the planted ones: a retrained classifier or an edited
+        # document must not make the demo drop harmless passages, or miss the planted one.
+        run: |
+          docker rm -f demo
+          docker run --rm safegate-demo python -m app.rag.check_samples | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Push
         run: |

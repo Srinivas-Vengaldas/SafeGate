@@ -10,6 +10,7 @@ from app.rails.base import Rail
 from app.rails.injection import InjectionRail
 from app.rails.pii import PiiRail
 from app.rails.rules import RulesRail
+from app.rails.secrets import SecretsRail
 from app.rails.toxicity import ToxicityRail
 
 _APP_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -27,6 +28,11 @@ class PiiConfig(BaseModel):
     entities: list[str] = Field(
         default_factory=lambda: ["EMAIL_ADDRESS", "PHONE_NUMBER", "US_SSN", "CREDIT_CARD"]
     )
+
+
+class SecretsConfig(BaseModel):
+    mode: str = "redact"
+    formats: list[str] | None = None  # None: every known format in app/rails/secrets.py
 
 
 class InjectionConfig(BaseModel):
@@ -84,6 +90,8 @@ class Policy(BaseModel):
                 rails.append(RulesRail(**RulesConfig(**cfg).model_dump()))
             elif rail_name == "pii":
                 rails.append(PiiRail(**PiiConfig(**cfg).model_dump(), spacy_model=spacy_model))
+            elif rail_name == "secrets":
+                rails.append(SecretsRail(**SecretsConfig(**cfg).model_dump()))
             elif rail_name == "injection":
                 rails.append(InjectionRail(**InjectionConfig(**cfg).model_dump()))
             elif rail_name == "toxicity":

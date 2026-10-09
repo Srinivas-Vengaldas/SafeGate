@@ -31,11 +31,11 @@ per-rail latency, verdict-cache hit ratio, rate-limited requests).
 client (any OpenAI SDK)
    │  base_url = http://safegate:8000/v1
    ▼
-SafeGate ── rate limit (Redis) ── input rails ──► rules ─► PII (Presidio) ─► injection classifier
+SafeGate ── rate limit (Redis) ── input rails ──► rules ─► secrets ─► PII (Presidio) ─► injection classifier
    │                                  │ block → 400 safegate_blocked (or a refusal reply), LLM never called
    │                                  │ redact → redacted text is what the LLM sees
    ▼                                  ▼
-LLM provider ──► output rails ──► PII redaction ─► toxicity (Detoxify, ONNX) ──► client
+LLM provider ──► output rails ──► secrets ─► PII redaction ─► toxicity (Detoxify, ONNX) ──► client
    │                 │ block → reply withheld, finish_reason "content_filter"
    ▼                 ▼
 decision log (PostgreSQL, input hashed, never stored raw) + Prometheus metrics + verdict cache (Redis)
@@ -98,6 +98,8 @@ input_rails:
     max_chars: 8000
     denylist: [ignore previous instructions]
     patterns: ['reveal\s+your\s+system\s+prompt']
+  secrets:
+    mode: redact              # API keys, tokens, private keys, "password is ..." values; or block
   pii:
     mode: redact              # or block
     threshold: 0.4
@@ -106,6 +108,7 @@ input_rails:
     model: models/injection-onnx
     threshold: 0.975
 output_rails:                 # screen the model's reply
+  secrets: {}
   pii:
     entities: [EMAIL_ADDRESS, PHONE_NUMBER, US_SSN, CREDIT_CARD]
   toxicity:

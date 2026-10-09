@@ -113,7 +113,7 @@ def test_check_endpoint(client):
     data = resp.json()
     assert data["action"] == "redact"
     assert "212-555-0187" not in data["text"]
-    assert [v["rail"] for v in data["verdicts"]] == ["rules", "pii"]
+    assert [v["rail"] for v in data["verdicts"]] == ["rules", "secrets", "pii"]
 
 
 def test_decisions_are_logged_without_raw_text(client):
@@ -153,7 +153,7 @@ def test_stats_summarize_recent_decisions(client):
 
 
 def test_policy_endpoint_lists_rails_in_order(client):
-    assert list(client.get("/v1/policy").json()["input_rails"]) == ["rules", "pii"]
+    assert list(client.get("/v1/policy").json()["input_rails"]) == ["rules", "secrets", "pii"]
 
 
 def test_demo_page_is_served(client):

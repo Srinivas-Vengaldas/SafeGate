@@ -1,7 +1,10 @@
+import pytest
+
 from app.pipeline import run_rails
 from app.rails.base import Action
 from app.rails.pii import PiiRail
 from app.rails.rules import RulesRail
+from app.rails.secrets import SecretsRail
 
 
 def test_rules_allows_normal_text():
@@ -67,3 +70,38 @@ def test_pipeline_feeds_redacted_text_forward():
     result = run_rails([pii, Spy()], "contact me at a.b@example.org")
     assert result.action is Action.REDACT
     assert "a.b@example.org" not in seen[0]
+
+
+@pytest.mark.parametrize(
+    "text, kind",
+    [
+        ("for the repo the APIsecret value is i0ijieqwjd9u9", "SECRET"),
+        ("my password is hunter2!", "SECRET"),
+        ("export OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwx1234", "OPENAI_KEY"),
+        ("key AKIAIOSFODNN7EXAMPLE", "AWS_ACCESS_KEY"),
+        ("ghp_abcdefghijklmnopqrstuvwxyz0123456789AB", "GITHUB_TOKEN"),
+        ("-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----", "PRIVATE_KEY"),
+    ],
+)
+def test_secrets_are_redacted(text, kind):
+    verdict = SecretsRail().check(text)
+    assert verdict.action is Action.REDACT
+    assert f"<{kind}>" in verdict.redacted_text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "What does 'password is required' mean?",
+        "The token is a unit of text in LLMs.",
+        "How do I store an API key securely?",
+        "Your password must be longer than eight characters.",
+    ],
+)
+def test_talking_about_secrets_is_allowed(text):
+    assert SecretsRail().check(text).action is Action.ALLOW
+
+
+def test_secrets_block_mode():
+    verdict = SecretsRail(mode="block").check("password: Tr0ub4dor&3")
+    assert verdict.action is Action.BLOCK

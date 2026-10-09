@@ -13,6 +13,8 @@ input_rails:
     patterns:
       - '(?:reveal|print|show|repeat)\s+(?:your|the)\s+(?:system|hidden|initial)\s+(?:prompt|instructions)'
       - 'pretend\s+(?:that\s+)?you\s+(?:have|are)\s+no\s+(?:rules|restrictions|filters)'
+  secrets:
+    mode: redact          # API keys, tokens, private keys, "password is ..." values
   pii:
     mode: redact          # redact | block
     threshold: 0.4       # Presidio scores bare phone numbers at 0.4
@@ -27,6 +29,8 @@ input_rails:
 # Rails run on the model's reply before the client sees it. With any output rail set, streamed
 # replies are buffered, screened, then replayed, so time to first token becomes the full reply.
 output_rails:
+  secrets:
+    mode: redact
   pii:
     mode: redact
     threshold: 0.4

@@ -1,0 +1,53 @@
+name: Poisoned-retrieval benchmark
+
+# Screens clean and poisoned document passages with each rail set (eval/poisoned_retrieval.py),
+# using the trained classifier. Results go to the job summary, the rag-poisoning artifact and the
+# rag-poisoning/<run id> branch.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install ".[onnx]" "datasets>=3.0"
+      - name: Fetch the trained classifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          deploy/fetch_models.sh /tmp/models
+          mkdir -p models /tmp/policy
+          cp -r /tmp/models/injection-onnx models/injection-onnx
+          python deploy/make_policy.py policies/default.yaml /tmp/policy/default.yaml \
+            --injection-threshold "$(cat /tmp/models/injection-threshold)"
+      - name: Benchmark
+        run: |
+          set -o pipefail
+          python -m eval.poisoned_retrieval --policy-dir /tmp/policy --out reports/rag-poisoning \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rag-poisoning
+          path: reports/rag-poisoning/
+      - name: Commit results to a branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan "rag-poisoning/${{ github.run_id }}"
+          git rm -rq --cached .
+          git add -f reports/rag-poisoning
+          git commit -m "Poisoned-retrieval benchmark from run ${{ github.run_id }}"
+          git push origin "rag-poisoning/${{ github.run_id }}"

@@ -1,0 +1,62 @@
+{
+  "requests": 1000,
+  "concurrency": 1,
+  "prompts": 150,
+  "machine": "x86_64, Linux",
+  "results": {
+    "direct": {
+      "requests": 1000,
+      "statuses": {
+        "200": 1000
+      },
+      "p50_ms": 0.63,
+      "p95_ms": 0.83,
+      "p99_ms": 0.99,
+      "mean_ms": 0.67,
+      "throughput_rps": 1480.8,
+      "added_p50_ms": 0.0,
+      "added_p95_ms": 0.0
+    },
+    "no-rails": {
+      "requests": 1000,
+      "statuses": {
+        "200": 1000
+      },
+      "p50_ms": 2.02,
+      "p95_ms": 2.77,
+      "p99_ms": 14.74,
+      "mean_ms": 2.72,
+      "throughput_rps": 368.0,
+      "added_p50_ms": 1.39,
+      "added_p95_ms": 1.94
+    },
+    "rails": {
+      "requests": 1000,
+      "statuses": {
+        "200": 967,
+        "400": 33
+      },
+      "p50_ms": 45.38,
+      "p95_ms": 48.75,
+      "p99_ms": 65.1,
+      "mean_ms": 45.92,
+      "throughput_rps": 21.8,
+      "added_p50_ms": 44.75,
+      "added_p95_ms": 47.92
+    },
+    "cached": {
+      "requests": 1000,
+      "statuses": {
+        "200": 967,
+        "400": 33
+      },
+      "p50_ms": 1.94,
+      "p95_ms": 2.27,
+      "p99_ms": 3.83,
+      "mean_ms": 2.04,
+      "throughput_rps": 490.2,
+      "added_p50_ms": 1.31,
+      "added_p95_ms": 1.44
+    }
+  }
+}

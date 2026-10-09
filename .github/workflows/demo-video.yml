@@ -31,6 +31,7 @@ jobs:
           for i in $(seq 1 90); do curl -sf localhost:8000/healthz && break; sleep 2; done
       - name: Record
         run: |
+          sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
           pip install playwright==1.48.0
           python -m playwright install --with-deps chromium
           python eval/demo_video.py --url http://localhost:8000 --out demo

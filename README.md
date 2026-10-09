@@ -5,19 +5,25 @@ screens traffic in layers (cheap checks first, expensive ones last), logs every 
 and ships with an evaluation harness that measures how well it works, including how often it
 wrongly blocks legitimate users.
 
-> Status: **Week 1 of 4.** Proxy, rules rail, PII rail, decision log, metrics, Docker and CI are
-> in. The fine-tuned injection classifier, output rails and benchmark come next (see Roadmap).
+> Status: **Week 3 of 4.** Input and output rails, the fine-tuned injection classifier, Redis rate
+> limiting and caching, a Grafana dashboard, a latency benchmark and a garak red-team run are in.
+> Week 4 is deployment polish and write-up (see Roadmap).
 
 ## Demo
 
 Open `http://localhost:8000/` after `docker compose up`. The page has two panels:
 
 - **Playground:** type a prompt (or pick an example attack) and see each rail's verdict, score and
-  reason, plus exactly what the LLM would receive after redaction.
+  reason, plus exactly what the LLM would receive after redaction. Switch to **Model reply** to
+  run the output rails (PII redaction, toxicity) on a reply instead.
 - **Live monitor:** request counts by verdict, blocks and redactions per rail, p50/p95 screening
   latency, and the most recent audit-log entries, refreshed every few seconds.
 
 To host it publicly on Render's free tier, see [docs/deploy-demo.md](docs/deploy-demo.md).
+
+`docker compose --profile monitoring up` also starts Prometheus and a provisioned Grafana
+dashboard at `http://localhost:3000` (requests by verdict, blocks by rail, p50/p95 screening and
+per-rail latency, verdict-cache hit ratio, rate-limited requests).
 
 ## How it works
 
@@ -25,15 +31,24 @@ To host it publicly on Render's free tier, see [docs/deploy-demo.md](docs/deploy
 client (any OpenAI SDK)
    │  base_url = http://safegate:8000/v1
    ▼
-SafeGate ── input rails ──► rules (length, denylist, regex) ─► PII (Presidio) ─► …
-   │            │ block → 400 safegate_blocked, LLM never called
-   │            │ redact → redacted text is what the LLM sees
-   ▼            ▼
-LLM provider   decision log (PostgreSQL, input hashed, never stored raw) + Prometheus metrics
+SafeGate ── rate limit (Redis) ── input rails ──► rules ─► PII (Presidio) ─► injection classifier
+   │                                  │ block → 400 safegate_blocked (or a refusal reply), LLM never called
+   │                                  │ redact → redacted text is what the LLM sees
+   ▼                                  ▼
+LLM provider ──► output rails ──► PII redaction ─► toxicity (Detoxify, ONNX) ──► client
+   │                 │ block → reply withheld, finish_reason "content_filter"
+   ▼                 ▼
+decision log (PostgreSQL, input hashed, never stored raw) + Prometheus metrics + verdict cache (Redis)
 ```
 
 Each rail returns `allow`, `block` or `redact` with a score and a reason. A block stops the chain;
-a redaction feeds the redacted text to every later rail and to the LLM.
+a redaction feeds the redacted text to every later rail and to the LLM (or, on the way back, to
+the client). Screening is deterministic, so verdicts are cached by policy and text: a repeated
+prompt skips the classifiers.
+
+With any output rail set, streamed replies are buffered, screened and then replayed, so time to
+first token becomes the full generation time. That is the price of never showing a client
+unscreened text; a policy with no output rails streams straight through.
 
 ## Quick start
 
@@ -52,19 +67,21 @@ client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "
 ```
 
 A blocked request raises `openai.BadRequestError` with `error.type == "safegate_blocked"` and
-`error.code` naming the rail.
+`error.code` naming the rail, or, with `on_block: refuse`, returns a normal completion that
+explains the block with `finish_reason: "content_filter"`. Requests over a policy's rate limit get
+`429` with `error.type == "rate_limit_exceeded"` and a `Retry-After` header.
 
 ## API
 
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /v1/chat/completions` | OpenAI-compatible proxy, including `stream: true` passthrough |
-| `POST /v1/check` | Screen text without calling an LLM; returns per-rail verdicts |
+| `POST /v1/check` | Screen text without calling an LLM; returns per-rail verdicts. `"stage": "output"` runs the output rails |
 | `GET /v1/decisions` | Audit log; filters: `app`, `action`, `rail` (blocking rail), `since`, `until`, `limit`, `offset` |
 | `GET /v1/stats` | Dashboard aggregates over recent decisions: counts by verdict and rail, p50/p95 latency |
 | `GET /v1/policy` | The active policy (rails and their order) |
 | `GET /` | Demo page: playground and live monitor |
-| `GET /metrics` | Prometheus: requests by action, verdicts by rail, rail and screening latency |
+| `GET /metrics` | Prometheus: requests by action, verdicts by rail and stage, rail and screening latency, cache hits, rate-limited requests |
 | `GET /healthz` | Liveness; returns 503 until policies and models are loaded |
 
 Every response carries an `X-SafeGate-Request-Id` header that matches the decision log row.
@@ -85,7 +102,24 @@ input_rails:
     mode: redact              # or block
     threshold: 0.4
     entities: [EMAIL_ADDRESS, PHONE_NUMBER, US_SSN, CREDIT_CARD]
+  injection:
+    model: models/injection-onnx
+    threshold: 0.975
+output_rails:                 # screen the model's reply
+  pii:
+    entities: [EMAIL_ADDRESS, PHONE_NUMBER, US_SSN, CREDIT_CARD]
+  toxicity:
+    model: models/toxicity-onnx   # Detoxify's model exported by the "Export toxicity model" workflow
+    threshold: 0.5
+on_block: error               # or refuse: answer with a refusal message instead of a 400
+rate_limit:                   # per client (API key, else IP) and app
+  requests: 60
+  per_seconds: 60
 ```
+
+Rate-limit counters and cached verdicts live in Redis when `SAFEGATE_REDIS_URL` is set (docker
+compose sets it), so several gateway replicas share them; without it each process keeps its own.
+Redis errors fail open: an outage of an auxiliary store should not take the gateway down.
 
 ## Injection classifier
 
@@ -147,7 +181,7 @@ Never commit `.env`.
 - [x] **Week 2 (results v2):** retrained with hard-negative benign data; tricky-benign false positives 18.7% → 4.7%
 - [x] Demo page (playground + live monitor) and automatic public deploy (GHCR image, Render free tier)
 - [x] ONNX int8 export served without PyTorch; demo fits in 512 MB
-- [ ] **Week 3:** output rails (PII redaction, toxicity), Redis rate limiting and cache, garak scan of bare LLM vs. SafeGate, latency benchmark
+- [x] **Week 3:** output rails (PII redaction, toxicity), Redis rate limiting and verdict cache, Grafana dashboard, garak scan of bare LLM vs. SafeGate, latency benchmark
 - [ ] **Week 4:** AWS deployment, results table, architecture diagram, demo video; stretch: ONNX export, baseline comparison, NLI grounding check
 
 ## Results
@@ -217,7 +251,27 @@ ONNX Runtime memory-maps the weights instead of copying them onto the heap (copy
 
 ![Precision-recall curve on the test split](reports/v2/pr_curve.png)
 
-garak attack-success rates and end-to-end gateway latency arrive in Week 3.
+### Gateway latency
+
+[eval/latency_bench.py](eval/latency_bench.py) sends 1,000 chat completions per target, one at a
+time, to an instant mock LLM, so the numbers are what SafeGate adds and nothing else. Prompts are
+the 150 tricky-benign ones, which pass every rail (except the 4.6% the classifier wrongly blocks)
+and so take the slowest path. Full policy: rules, PII and the injection classifier on the prompt;
+PII and Detoxify toxicity on the reply. GitHub Actions runner, 4 vCPUs
+([reports/latency/latency.md](reports/latency/latency.md)).
+
+| Target | p50 | p95 | p99 | Added p50 / p95 | Requests/s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Direct to the LLM (baseline) | 0.6 ms | 0.8 ms | 1.0 ms | | 1,481 |
+| SafeGate, no rails (proxy only) | 2.0 ms | 2.8 ms | 14.7 ms | 1.4 / 1.9 ms | 368 |
+| SafeGate, full policy | 45.4 ms | 48.8 ms | 65.1 ms | **44.8 / 47.9 ms** | 22 |
+| SafeGate, full policy, verdict cached | 1.9 ms | 2.3 ms | 3.8 ms | 1.3 / 1.4 ms | 490 |
+
+The classifiers are nearly all of the cost; the proxy itself adds under 2 ms. Two ONNX models in
+one process initially ran 3.7x slower (168 ms p50) because ONNX Runtime's idle threads spin
+waiting for work and stole each other's cores; turning spinning off fixed it. Throughput is one
+request at a time on one process; CPU-bound screening scales with cores and replicas, and repeated
+prompts skip the models through the Redis verdict cache.
 
 ## License
 

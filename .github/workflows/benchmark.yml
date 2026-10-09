@@ -208,7 +208,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "benchmark-results/${{ github.run_id }}"
-          git add -f reports/
+          # An orphan branch holding only the reports: a branch that carries workflow files
+          # differing from main cannot be pushed with the default token.
+          git checkout --orphan "benchmark-results/${{ github.run_id }}"
+          git rm -rq --cached .
+          git add -f reports/latency reports/redteam
           git commit -m "Benchmark results from run ${{ github.run_id }}"
           git push origin "benchmark-results/${{ github.run_id }}"

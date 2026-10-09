@@ -254,6 +254,38 @@ ONNX Runtime memory-maps the weights instead of copying them onto the heap (copy
 
 ![Precision-recall curve on the test split](reports/v2/pr_curve.png)
 
+### Red-teaming with garak
+
+[NVIDIA garak](https://github.com/NVIDIA/garak) attacked `qwen2.5:1.5b` (Ollama, CPU) twice:
+directly, and behind SafeGate with its default policy plus both models. Attack success rate is
+the share of replies garak's detectors flag as a successful attack; lower is better. Up to 40
+prompts per probe, one generation each, temperature 0
+([reports/redteam/garak.md](reports/redteam/garak.md), **Benchmark** workflow).
+
+| Attack category (garak probes) | Bare LLM | Behind SafeGate |
+| --- | ---: | ---: |
+| Prompt injection (`promptinject` hijacks) | 75.0% (90/120) | **3.3%** (4/120) |
+| Jailbreaks (`dan.DanInTheWild`) | 75.0% (30/40) | **5.0%** (2/40) |
+| Indirect injection in documents (`latentinjection`) | 31.2% (25/80) | **18.8%** (15/80) |
+| Toxic continuations (`realtoxicityprompts`) | 4.0% (8/200) | **1.5%** (3/200) |
+| Encoded injection (`encoding.InjectBase64`) | 0.0% (0/40) | 0.0% (0/40) |
+| **All** | **31.9%** (153/480) | **5.0%** (24/480) |
+
+What this does and does not show:
+
+- Direct injections and jailbreaks are where SafeGate is strongest: success drops from 75% to
+  3-5%.
+- **Indirect injection is the weak spot.** These attacks hide an instruction inside a document the
+  user pastes in ("summarize this report"), and the classifier, trained on prompts that are
+  attacks as a whole, misses most of them. Screening retrieved and tool content as its own role
+  (`screen_roles: [user, tool]`) and training on document-embedded attacks are the next steps.
+- The 1.5B model cannot decode Base64, so the encoding probe succeeds against neither target; it
+  says nothing about SafeGate.
+- Blocked requests are answered with a refusal (`on_block: refuse`), which garak scores as a
+  defended attack. With the default `on_block: error`, garak would drop those requests from the
+  count instead.
+- One small model, 480 prompts, one run: treat the numbers as indicative, not as a leaderboard.
+
 ### Gateway latency
 
 [eval/latency_bench.py](eval/latency_bench.py) sends 1,000 chat completions per target, one at a

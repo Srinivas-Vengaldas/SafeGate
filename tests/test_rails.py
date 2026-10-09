@@ -77,7 +77,7 @@ def test_pipeline_feeds_redacted_text_forward():
     [
         ("for the repo the APIsecret value is i0ijieqwjd9u9", "SECRET"),
         ("my password is hunter2!", "SECRET"),
-        ("export OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwx1234", "OPENAI_KEY"),
+        ("export OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwx1234", "SK_API_KEY"),
         ("key AKIAIOSFODNN7EXAMPLE", "AWS_ACCESS_KEY"),
         ("ghp_abcdefghijklmnopqrstuvwxyz0123456789AB", "GITHUB_TOKEN"),
         ("-----BEGIN RSA PRIVATE KEY-----\nMIIEow\n-----END RSA PRIVATE KEY-----", "PRIVATE_KEY"),

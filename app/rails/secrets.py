@@ -4,7 +4,8 @@ from collections import Counter
 
 from app.rails.base import Action, Verdict
 
-# Credentials with a recognizable shape, from the prefixes their issuers document.
+# Credentials with a recognizable shape, from the prefixes their issuers document. SK_API_KEY
+# covers the "sk-" keys several LLM providers use.
 KNOWN_FORMATS: dict[str, str] = {
     "PRIVATE_KEY": (
         r"-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----[\s\S]*?"
@@ -12,7 +13,7 @@ KNOWN_FORMATS: dict[str, str] = {
     ),
     "AWS_ACCESS_KEY": r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b",
     "GITHUB_TOKEN": r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{60,})\b",
-    "OPENAI_KEY": r"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}\b",
+    "SK_API_KEY": r"\bsk-(?:proj-|svcacct-)?[A-Za-z0-9_-]{20,}\b",
     "GOOGLE_API_KEY": r"\bAIza[0-9A-Za-z_-]{35}\b",
     "SLACK_TOKEN": r"\bxox[abposr]-[A-Za-z0-9-]{10,}\b",
     "STRIPE_KEY": r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b",

@@ -21,6 +21,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
+import httpx
 import numpy as np
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -40,6 +41,7 @@ from app.rag.service import (
     build_messages,
     check_citations,
     generate,
+    upstream_error,
 )
 from app.rag.store import RagStore, split_passages
 
@@ -84,6 +86,7 @@ class Rag:
             )
         self._samples: dict[str, tuple[SampleSet, list[np.ndarray]]] = {}
         self._lock = asyncio.Lock()
+        self.embedder_error: str | None = None
 
     async def embed(self, texts: list[str]) -> np.ndarray:
         if self._upstream is not None:
@@ -95,6 +98,7 @@ class Rag:
                         vectors = await self._upstream.embed(texts)
                     except Exception as exc:  # noqa: BLE001 - any failure means: don't use it
                         log.warning("embedding model unavailable, using hashing: %r", exc)
+                        self.embedder_error = str(exc)[:300]
                         self._upstream = None
                     else:
                         self.embedder = self._upstream
@@ -163,6 +167,7 @@ def add_rag_routes(
             "embedder": rag().embedder.name,
             "answers": rag().can_answer,
             "model": settings.rag_chat_model if rag().can_answer else None,
+            "embedder_error": rag().embedder_error,
         }
 
     @app.post("/v1/rag/documents", tags=["rag"])
@@ -259,6 +264,28 @@ def add_rag_routes(
         loaded = app.state.policies.get(x_safegate_app)
         rag().store.clear(collection_name(request, loaded, x_safegate_collection))
         return {"documents": []}
+
+    @app.get("/v1/rag/models", tags=["rag"])
+    async def list_models() -> dict[str, Any]:
+        """Model ids the configured LLM endpoint offers, to pick SAFEGATE_RAG_CHAT_MODEL and
+        SAFEGATE_RAG_EMBED_MODEL. Ids only; nothing about the key."""
+        if not settings.rag_key:
+            raise HTTPException(404, "no RAG API key configured")
+        try:
+            response = await app.state.http.get(
+                f"{settings.rag_url.rstrip('/')}/models",
+                headers={"authorization": f"Bearer {settings.rag_key}"},
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(502, f"LLM endpoint unreachable: {exc.__class__.__name__}") from exc
+        if response.status_code != 200:
+            raise HTTPException(502, f"LLM endpoint returned {upstream_error(response)}")
+        ids = sorted(str(m.get("id", "")) for m in response.json().get("data", []))
+        return {
+            "chat_model": settings.rag_chat_model,
+            "embed_model": settings.rag_embed_model or None,
+            "models": ids,
+        }
 
     @app.post("/v1/rag/query", tags=["rag"])
     async def query(

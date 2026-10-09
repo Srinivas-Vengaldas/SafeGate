@@ -84,6 +84,7 @@ explains the block with `finish_reason: "content_filter"`. Requests over a polic
 | `POST /v1/check` | Screen text, and optionally `files` (images or documents as data URLs), without calling an LLM; returns per-rail verdicts. `"stage": "output"` runs the output rails |
 | `POST /v1/rag/documents` | Screen a document (text, or a file as a data URL) and index it unless blocked; `GET` lists, `DELETE` removes. Scoped by `X-SafeGate-Collection` |
 | `POST /v1/rag/query` | Answer a question from the indexed documents, with rails on the question, each retrieved passage and the answer |
+| `GET /v1/rag/models` | Model ids the configured RAG endpoint offers, for choosing the chat and embedding models |
 | `POST /v1/rag/sample` | Load a sample knowledge base: SafeGate's own docs (`?name=safegate`, default) or a company handbook (`?name=handbook`), each with one planted poisoned document |
 | `GET /v1/decisions` | Audit log; filters: `app`, `action`, `rail` (blocking rail), `since`, `until`, `limit`, `offset` |
 | `GET /v1/stats` | Dashboard aggregates over recent decisions: counts by verdict and rail, p50/p95 latency |

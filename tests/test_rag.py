@@ -247,3 +247,41 @@ def test_sample_passages_pass_the_default_policy_except_planted(capsys, monkeypa
     monkeypatch.setattr("sys.argv", ["check_samples", "policies"])
     assert check_samples.main() == 0
     assert "FAIL" not in capsys.readouterr().out
+
+
+@respx.mock
+def test_provider_error_messages_reach_the_caller(client):
+    respx.post(f"{UPSTREAM}/chat/completions").mock(
+        return_value=httpx.Response(
+            404, json=[{"error": {"code": 404, "message": "models/old-model is not found"}}]
+        )
+    )
+    client.post("/v1/rag/sample", headers=ALICE)
+    body = client.post(
+        "/v1/rag/query",
+        json={"question": "How was the injection classifier trained?"},
+        headers=ALICE,
+    ).json()
+    assert body["mode"] == "error"
+    assert body["error"] == "LLM returned HTTP 404: models/old-model is not found"
+
+
+@respx.mock
+def test_models_endpoint_lists_upstream_ids(client):
+    respx.get(f"{UPSTREAM}/models").mock(
+        return_value=httpx.Response(200, json={"data": [{"id": "b-model"}, {"id": "a-model"}]})
+    )
+    assert client.get("/v1/rag/models").json()["models"] == ["a-model", "b-model"]
+
+
+@respx.mock
+def test_embedding_errors_are_reported(settings):
+    respx.post(f"{UPSTREAM}/embeddings").mock(
+        return_value=httpx.Response(404, json={"error": {"message": "no such model"}})
+    )
+    settings = settings.model_copy(update={"rag_embed_model": "missing-model"})
+    with TestClient(create_app(settings)) as client:
+        client.post("/v1/rag/sample", headers=ALICE)
+        info = client.get("/v1/rag/documents", headers=ALICE).json()
+    assert info["embedder"] == "hashing"
+    assert "HTTP 404: no such model" in info["embedder_error"]

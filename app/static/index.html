@@ -415,10 +415,13 @@ function ragExamples(questions) {
 async function loadRag() {
   try {
     const d = await ragFetch("/v1/rag/documents");
-    // First visit: start with SafeGate's own docs, so there is something to ask about.
-    if (!d.documents.length) await loadSample("safegate"); else renderDocs(d.documents);
+    // First visit: start with SafeGate's own docs, so there is something to ask about. Loading
+    // them is the first embedding call, which settles which embedder serves this process.
+    if (!d.documents.length) { await loadSample("safegate"); return loadRag(); }
+    renderDocs(d.documents);
     $("rag-mode").textContent = d.answers
-      ? `Answers by ${d.model}; retrieval with ${d.embedder} embeddings.`
+      ? `Answers by ${d.model}; retrieval with ${d.embedder} embeddings.` +
+        (d.embedder_error ? ` (Embedding model unavailable: ${d.embedder_error})` : "")
       : "No LLM key configured: you'll see the screened passages an LLM would receive.";
   } catch (e) { $("rag-mode").textContent = e.message; }
 }

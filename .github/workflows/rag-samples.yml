@@ -1,0 +1,41 @@
+name: Check RAG samples
+
+# Screens every passage of the sample knowledge bases with the trained classifier, so edits to
+# app/rag/knowledge can be checked without a full deploy. Prints each passage's injection score.
+
+on:
+  push:
+    paths:
+      - app/rag/knowledge/**
+      - app/rag/service.py
+      - app/rag/check_samples.py
+      - .github/workflows/rag-samples.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: pip install ".[onnx]"
+      - name: Fetch the trained classifier
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          deploy/fetch_models.sh /tmp/models
+          mkdir -p models /tmp/policy
+          cp -r /tmp/models/injection-onnx models/injection-onnx
+          python deploy/make_policy.py policies/default.yaml /tmp/policy/default.yaml \
+            --injection-threshold "$(cat /tmp/models/injection-threshold)"
+      - name: Screen the samples
+        run: |
+          set -o pipefail
+          python -m app.rag.check_samples /tmp/policy | tee -a "$GITHUB_STEP_SUMMARY"

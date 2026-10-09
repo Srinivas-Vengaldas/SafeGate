@@ -65,6 +65,20 @@ class AnswerError(RuntimeError):
     pass
 
 
+def upstream_error(response: httpx.Response) -> str:
+    """The status and the provider's own error message, e.g. that a model name was not found."""
+    message = ""
+    try:
+        body = response.json()
+        body = body[0] if isinstance(body, list) and body else body
+        error = body.get("error") if isinstance(body, dict) else None
+        message = error.get("message", "") if isinstance(error, dict) else str(error or "")
+    except ValueError:
+        message = response.text
+    message = " ".join(str(message).split())[:200]
+    return f"HTTP {response.status_code}" + (f": {message}" if message else "")
+
+
 async def generate(
     client: httpx.AsyncClient, base_url: str, api_key: str, model: str, messages: list[dict]
 ) -> str:
@@ -78,7 +92,7 @@ async def generate(
     except httpx.HTTPError as exc:
         raise AnswerError(f"LLM unreachable: {exc.__class__.__name__}") from exc
     if response.status_code != 200:
-        raise AnswerError(f"LLM returned HTTP {response.status_code}")
+        raise AnswerError(f"LLM returned {upstream_error(response)}")
     try:
         return response.json()["choices"][0]["message"]["content"] or ""
     except (ValueError, KeyError, IndexError, TypeError) as exc:

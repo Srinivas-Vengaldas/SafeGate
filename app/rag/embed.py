@@ -84,7 +84,10 @@ class UpstreamEmbedder:
                 json={"model": self.model, "input": list(texts[start : start + self.batch])},
                 headers=self.headers,
             )
-            response.raise_for_status()
+            if response.status_code != 200:
+                from app.rag.service import upstream_error
+
+                raise RuntimeError(f"embedding model returned {upstream_error(response)}")
             data = sorted(response.json()["data"], key=lambda d: d["index"])
             rows += [d["embedding"] for d in data]
         return _normalize(np.array(rows, dtype=np.float32))

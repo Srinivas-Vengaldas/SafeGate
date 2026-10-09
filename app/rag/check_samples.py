@@ -22,17 +22,19 @@ def main() -> int:
     failures = 0
     for name, make in SAMPLE_SETS.items():
         for document in make().documents:
-            for passage in document.passages:
+            for i, passage in enumerate(document.passages):
                 result = run_rails(loaded.input_rails, passage, "context")
                 blocked = result.blocked_by
-                if bool(blocked) != document.planted:
-                    failures += 1
-                    reason = f"{blocked.rail}: {blocked.reason}" if blocked else "not blocked"
-                    print(f"FAIL {name}/{document.name}: {reason}\n  {passage[:200]}")
-                elif blocked:
-                    print(f"ok   {name}/{document.name}: dropped by {blocked.rail}")
-            if not document.planted:
-                print(f"ok   {name}/{document.name}: {len(document.passages)} passages pass")
+                scores = " ".join(
+                    f"{v.rail}={v.score:.3f}" for v in result.verdicts if v.rail == "injection"
+                )
+                ok = bool(blocked) == document.planted
+                failures += not ok
+                status = "ok  " if ok else "FAIL"
+                verdict = f"blocked by {blocked.rail}" if blocked else "passes"
+                print(f"{status} {name}/{document.name}#{i}: {verdict} {scores}".rstrip())
+                if not ok:
+                    print(f"     {passage[:160]}")
     return 1 if failures else 0
 
 

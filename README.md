@@ -142,7 +142,8 @@ question -> input rails -> embed -> retrieve top k -> input rails on each passag
   output rails like any reply.
 
 Any OpenAI-compatible endpoint can answer: set `SAFEGATE_RAG_BASE_URL`, `SAFEGATE_RAG_API_KEY`
-and `SAFEGATE_RAG_CHAT_MODEL` (the public demo uses Gemini). `SAFEGATE_RAG_EMBED_MODEL` selects an
+and `SAFEGATE_RAG_CHAT_MODEL` (the public demo uses Gemini). The chat model may be a
+comma-separated list: when one is rate limited or overloaded, the next one answers. `SAFEGATE_RAG_EMBED_MODEL` selects an
 embedding model; without one, or if it fails, a built-in hashing embedder matches on shared words
 with no model at all. Without a key, queries return the screened passages an LLM would receive.
 The index lives in memory per collection and expires after an hour idle; generated answers are

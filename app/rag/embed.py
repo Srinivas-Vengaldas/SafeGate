@@ -88,6 +88,9 @@ class UpstreamEmbedder:
                 from app.rag.service import upstream_error
 
                 raise RuntimeError(f"embedding model returned {upstream_error(response)}")
-            data = sorted(response.json()["data"], key=lambda d: d["index"])
+            data = response.json()["data"]
+            # Some providers (Gemini) omit "index"; their rows come back in input order.
+            if all("index" in d for d in data):
+                data = sorted(data, key=lambda d: d["index"])
             rows += [d["embedding"] for d in data]
         return _normalize(np.array(rows, dtype=np.float32))

@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     # screened passages but no generated answer.
     rag_base_url: str = ""
     rag_api_key: str = ""
+    # Comma-separated: later models answer when earlier ones are busy (rate limited, overloaded).
     rag_chat_model: str = "gpt-4o-mini"
     # Empty: a built-in hashing embedder (matches shared words, needs no model or key).
     rag_embed_model: str = ""
@@ -42,6 +43,10 @@ class Settings(BaseSettings):
     @property
     def rag_url(self) -> str:
         return self.rag_base_url or self.upstream_base_url
+
+    @property
+    def rag_chat_models(self) -> list[str]:
+        return [m.strip() for m in self.rag_chat_model.split(",") if m.strip()]
 
     @property
     def rag_key(self) -> str:

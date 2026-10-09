@@ -16,7 +16,7 @@ ENV SAFEGATE_TRUST_FORWARDED_FOR=true
 # SAFEGATE_RAG_API_KEY is set on the host (a key for RAG only, so the public chat proxy never
 # spends it); until then the playground shows the screened passages without an answer.
 # gemini-flash-latest is Google's alias for its current Flash model, so retirements of a
-# versioned model don't break the demo. GET /v1/rag/models lists what the key can use.
+# versioned model don't break the demo; Flash-Lite answers when Flash is overloaded. GET /v1/rag/models lists what the key can use.
 ENV SAFEGATE_RAG_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai \
-    SAFEGATE_RAG_CHAT_MODEL=gemini-flash-latest \
+    SAFEGATE_RAG_CHAT_MODEL=gemini-flash-latest,gemini-flash-lite-latest \
     SAFEGATE_RAG_EMBED_MODEL=gemini-embedding-001

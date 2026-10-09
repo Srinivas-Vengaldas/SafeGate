@@ -263,7 +263,7 @@ def test_provider_error_messages_reach_the_caller(client):
         headers=ALICE,
     ).json()
     assert body["mode"] == "error"
-    assert body["error"] == "LLM returned HTTP 404: models/old-model is not found"
+    assert body["error"] == "gpt-4o-mini returned HTTP 404: models/old-model is not found"
 
 
 @respx.mock
@@ -299,3 +299,37 @@ def test_documents_use_the_context_rails(client):
     ).json()
     assert resp["action"] == "block" and resp["indexed"] is False
     assert resp["verdicts"][0]["rail"] == "rules"
+
+
+@respx.mock
+def test_busy_model_hands_over_to_the_next(settings):
+    def reply(request):
+        model = json.loads(request.content)["model"]
+        if model == "big":
+            return httpx.Response(503, json={"error": {"message": "high demand"}})
+        return completion("20 days [1].")
+
+    respx.post(f"{UPSTREAM}/chat/completions").mock(side_effect=reply)
+    settings = settings.model_copy(update={"rag_chat_model": "big, small"})
+    with TestClient(create_app(settings)) as client:
+        client.post("/v1/rag/sample?name=handbook", headers=ALICE)
+        body = client.post(
+            "/v1/rag/query", json={"question": "How many vacation days do I get?"}, headers=ALICE
+        ).json()
+    assert body["mode"] == "answer" and body["model"] == "small"
+
+
+@respx.mock
+def test_embeddings_without_an_index_field(settings):
+    def embeddings(request):
+        texts = json.loads(request.content)["input"]
+        return httpx.Response(
+            200, json={"data": [{"embedding": [1.0, float(len(t))]} for t in texts]}
+        )
+
+    respx.post(f"{UPSTREAM}/embeddings").mock(side_effect=embeddings)
+    settings = settings.model_copy(update={"rag_embed_model": "gemini-like"})
+    with TestClient(create_app(settings)) as client:
+        client.post("/v1/rag/sample", headers=ALICE)
+        info = client.get("/v1/rag/documents", headers=ALICE).json()
+    assert info["embedder"] == "gemini-like" and info["embedder_error"] is None

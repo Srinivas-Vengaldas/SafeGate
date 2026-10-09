@@ -115,7 +115,7 @@ class Rag:
 
     @property
     def can_answer(self) -> bool:
-        return bool(self.settings.rag_key and self.settings.rag_chat_model)
+        return bool(self.settings.rag_key and self.settings.rag_chat_models)
 
 
 def add_rag_routes(
@@ -166,7 +166,7 @@ def add_rag_routes(
             "documents": documents_json(name),
             "embedder": rag().embedder.name,
             "answers": rag().can_answer,
-            "model": settings.rag_chat_model if rag().can_answer else None,
+            "model": settings.rag_chat_models[0] if rag().can_answer else None,
             "embedder_error": rag().embedder_error,
         }
 
@@ -379,11 +379,11 @@ def add_rag_routes(
 
         llm_started = time.perf_counter()
         try:
-            raw = await generate(
+            raw, model = await generate(
                 app.state.http,
                 settings.rag_url,
                 settings.rag_key,
-                settings.rag_chat_model,
+                settings.rag_chat_models,
                 build_messages(question.text, sources),
             )
         except AnswerError as exc:
@@ -407,7 +407,7 @@ def add_rag_routes(
             citations=cited,
             invalid_citations=invalid,
             uncited=not cited and not answer.blocked_by,
-            model=settings.rag_chat_model,
+            model=model,
             llm_ms=llm_ms,
             answer_ms=round(llm_ms, 1),
         )

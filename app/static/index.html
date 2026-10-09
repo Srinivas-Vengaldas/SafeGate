@@ -450,7 +450,7 @@ async function ask() {
     // The badge is what happened to the answer; dropped passages are counted beside it.
     const verdict = d.mode === "blocked" ? "block" : (d.answer_action || "allow");
     $("rag-action").className = "badge " + verdict; $("rag-action").textContent = verdict;
-    const llm = d.answer_ms ? `, LLM ${(d.answer_ms / 1000).toFixed(1)} s` : "";
+    const llm = d.answer_ms ? `, ${d.model} ${(d.answer_ms / 1000).toFixed(1)} s` : "";
     const dropped = d.passages.filter((p) => p.action === "block").length;
     const droppedNote = dropped ? `${dropped} poisoned passage(s) dropped · ` : "";
     $("rag-timing").textContent = `${droppedNote}screening ${d.screen_ms.toFixed(0)} ms${llm}`;

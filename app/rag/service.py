@@ -79,24 +79,40 @@ def upstream_error(response: httpx.Response) -> str:
     return f"HTTP {response.status_code}" + (f": {message}" if message else "")
 
 
+# Statuses that mean "busy, try elsewhere": rate limited, overloaded, temporarily down.
+_BUSY = {429, 500, 502, 503, 504, 529}
+
+
 async def generate(
-    client: httpx.AsyncClient, base_url: str, api_key: str, model: str, messages: list[dict]
-) -> str:
-    """One non-streamed completion from an OpenAI-compatible endpoint."""
-    try:
-        response = await client.post(
-            f"{base_url.rstrip('/')}/chat/completions",
-            json={"model": model, "messages": messages, "temperature": 0.2},
-            headers={"authorization": f"Bearer {api_key}"},
-        )
-    except httpx.HTTPError as exc:
-        raise AnswerError(f"LLM unreachable: {exc.__class__.__name__}") from exc
-    if response.status_code != 200:
-        raise AnswerError(f"LLM returned {upstream_error(response)}")
-    try:
-        return response.json()["choices"][0]["message"]["content"] or ""
-    except (ValueError, KeyError, IndexError, TypeError) as exc:
-        raise AnswerError("LLM returned an unexpected response") from exc
+    client: httpx.AsyncClient,
+    base_url: str,
+    api_key: str,
+    models: list[str],
+    messages: list[dict],
+) -> tuple[str, str]:
+    """One non-streamed completion from an OpenAI-compatible endpoint: the answer and the model
+    that gave it. Busy models (free tiers hit capacity often) hand over to the next one."""
+    error = "no model configured"
+    for model in models:
+        try:
+            response = await client.post(
+                f"{base_url.rstrip('/')}/chat/completions",
+                json={"model": model, "messages": messages, "temperature": 0.2},
+                headers={"authorization": f"Bearer {api_key}"},
+            )
+        except httpx.HTTPError as exc:
+            error = f"LLM unreachable: {exc.__class__.__name__}"
+            continue
+        if response.status_code != 200:
+            error = f"{model} returned {upstream_error(response)}"
+            if response.status_code in _BUSY:
+                continue
+            raise AnswerError(error)
+        try:
+            return response.json()["choices"][0]["message"]["content"] or "", model
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise AnswerError(f"{model} returned an unexpected response") from exc
+    raise AnswerError(error)
 
 
 KNOWLEDGE_DIR = Path(__file__).parent / "knowledge"

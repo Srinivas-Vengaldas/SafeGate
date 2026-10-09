@@ -16,12 +16,12 @@ from pydantic import BaseModel
 
 from app import metrics
 from app.attachments import (
-    IMAGE_TYPES,
     Attachment,
     UnreadableAttachment,
     chunks,
     extract,
     find_attachments,
+    from_upload,
     redact_image,
     replace_with_text,
 )
@@ -29,6 +29,7 @@ from app.config import Settings, get_settings
 from app.pipeline import PipelineResult, overall_action, run_rails
 from app.policy import LoadedPolicy, PolicyRegistry
 from app.proxy import completion_json, forward_chat_completion, sse_completion
+from app.rag.routes import add_rag_routes
 from app.rails.base import Action, Verdict
 from app.ratelimit import RateLimiter, VerdictCache, make_backend
 from app.store import DecisionStore
@@ -108,18 +109,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             results.append(result)
         files = []
         for upload in body.files:
-            data_url = (
-                upload.data
-                if upload.data.startswith("data:")
-                else (
-                    f"data:{upload.media_type or 'application/octet-stream'};base64,{upload.data}"
-                )
-            )
-            part = {"type": "file", "file": {"filename": upload.name, "file_data": data_url}}
-            attachment = find_attachments([{"role": "user", "content": [part]}], ["user"])[0]
-            if attachment.media_type in IMAGE_TYPES:
-                attachment.kind = "image"
-                attachment.part = {"type": "image_url", "image_url": {"url": data_url}}
+            attachment = from_upload(upload.name, upload.media_type, upload.data)
             file_result = await _screen_attachment(loaded, attachment)
             results.append(file_result)
             files.append(_attachment_json(attachment, file_result))
@@ -344,6 +334,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             screen_ms=screen_ms,
         )
 
+    add_rag_routes(
+        app,
+        settings,
+        screen=_screen,
+        screen_attachment=_screen_attachment,
+        rate_limit=_rate_limit,
+        record=_record,
+        client_id=lambda request: _client_id(request, settings.trust_forwarded_for),
+    )
     return app
 
 

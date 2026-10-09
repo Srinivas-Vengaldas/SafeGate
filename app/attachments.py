@@ -101,6 +101,19 @@ def find_attachments(messages: list[Any], roles: list[str]) -> list[Attachment]:
     return found
 
 
+def from_upload(name: str | None, media_type: str | None, data: str) -> Attachment:
+    """An attachment for a file sent on its own (to /v1/check or the RAG index): `data` is a
+    data: URL, or bare base64 with `media_type` set."""
+    if not data.startswith("data:"):
+        data = f"data:{media_type or 'application/octet-stream'};base64,{data}"
+    part = {"type": "file", "file": {"filename": name, "file_data": data}}
+    attachment = find_attachments([{"role": "user", "content": [part]}], ["user"])[0]
+    if attachment.media_type in IMAGE_TYPES:
+        attachment.kind = "image"
+        attachment.part = {"type": "image_url", "image_url": {"url": data}}
+    return attachment
+
+
 def _decode(url: str) -> tuple[str | None, bytes | None]:
     match = _DATA_URL.match(url)
     if not match:

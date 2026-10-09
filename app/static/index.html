@@ -85,12 +85,32 @@
   .upload .head { display: flex; gap: 8px; align-items: center; font-weight: 600; overflow-wrap: anywhere; }
   .upload img { display: block; max-width: 100%; margin-top: 8px; border: 1px solid var(--line); border-radius: 6px; }
   .upload pre { margin-top: 8px; max-height: 220px; overflow: auto; }
+  section.wide { grid-column: 1 / -1; }
+  .rag { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 20px; }
+  @media (max-width: 900px) { .rag { grid-template-columns: 1fr; } }
+  .rag textarea { min-height: 70px; }
+  .docs { list-style: none; padding: 0; margin: 0 0 10px; }
+  .docs li { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .docs li:first-child { border-top: 0; }
+  .docs .grow { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .docs button { border: 0; background: none; color: var(--muted); cursor: pointer; font: inherit; }
+  button.secondary { border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 8px;
+                     padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+  button.secondary:hover { border-color: var(--accent); }
+  .answer { border-left: 3px solid var(--accent); padding: 8px 12px; background: var(--code); border-radius: 0 8px 8px 0;
+            white-space: pre-wrap; overflow-wrap: anywhere; }
+  .answer sup { color: var(--accent); font-weight: 700; }
+  .passage { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin-top: 8px; font-size: 14px; }
+  .passage.dropped { border-color: var(--block); background: var(--block-bg); }
+  .passage .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-weight: 600; }
+  .passage p { margin: 6px 0 0; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
 <header>
   <h1>SafeGate</h1>
-  <p>An LLM guardrails gateway. Type a prompt, or paste a model reply, and watch it pass through each rail.
+  <p>An LLM guardrails gateway. Type a prompt, paste a model reply, attach a file, or ask questions of your own
+     documents, and watch each step pass through the rails.
      <a href="/docs">API docs</a> · <a href="https://github.com/Srinivas-Vengaldas/SafeGate">Source</a></p>
 </header>
 <main>
@@ -143,6 +163,43 @@
       </table>
     </div>
     <p class="muted">The audit log keeps a SHA-256 of each input, never the raw prompt. Counts cover the last 1,000 decisions.</p>
+  </section>
+
+  <section aria-labelledby="rag-h" class="wide">
+    <h2 id="rag-h">Ask your documents (guarded RAG)</h2>
+    <p class="muted">Documents are screened before they are indexed, every retrieved passage is screened again before
+      it reaches the prompt, and the answer goes through the output rails. Your documents are private to this browser
+      and expire after an hour.</p>
+    <div class="rag">
+      <div>
+        <h3>Knowledge base</h3>
+        <ul class="docs" id="docs"><li class="empty">No documents yet.</li></ul>
+        <div class="row">
+          <button type="button" class="secondary" id="rag-sample">Load sample handbook</button>
+          <input type="file" id="rag-file" multiple accept="image/*,.pdf,.docx,.txt,.md,.csv,.json" hidden>
+          <button type="button" class="secondary" id="rag-upload">Upload files</button>
+          <button type="button" class="secondary" id="rag-clear">Clear</button>
+        </div>
+        <div id="rag-ingest"></div>
+      </div>
+      <div>
+        <h3>Question</h3>
+        <label for="rag-q" class="muted">Ask something your documents answer</label>
+        <textarea id="rag-q" placeholder="How do I reset my password?"></textarea>
+        <div class="chips" id="rag-examples"></div>
+        <div class="row">
+          <button class="primary" id="rag-ask">Ask</button>
+          <span class="muted" id="rag-mode"></span>
+        </div>
+        <div id="rag-result" hidden>
+          <h3>Answer</h3>
+          <div class="row"><span id="rag-action" class="badge"></span><span class="muted" id="rag-timing"></span></div>
+          <div id="rag-answer" class="answer" style="margin-top:8px"></div>
+          <h3>Retrieved passages</h3>
+          <div id="rag-passages"></div>
+        </div>
+      </div>
+    </div>
   </section>
 </main>
 <script>
@@ -319,6 +376,123 @@ $("prompt").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctr
 loadPolicy();
 refresh();
 setInterval(refresh, 4000);
+
+// Guarded RAG. A random id kept in this browser keeps each visitor's documents separate.
+let collection = null;
+try { collection = localStorage.getItem("safegate-collection"); } catch {}
+if (!collection) {
+  collection = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now());
+  try { localStorage.setItem("safegate-collection", collection); } catch {}
+}
+const ragHeaders = { "content-type": "application/json", "x-safegate-collection": collection };
+async function ragFetch(path, options = {}) {
+  const res = await fetch(path, { ...options, headers: ragHeaders });
+  const data = await res.json();
+  if (!res.ok) throw new Error((data.error && data.error.message) || data.detail || res.statusText);
+  return data;
+}
+
+function renderDocs(docs) {
+  $("docs").innerHTML = docs.length ? docs.map((d) =>
+    `<li><span class="grow">${esc(d.name)} <span class="muted">${d.passages} passage(s)${d.screened ? "" : " · planted, not screened at upload"}</span></span>` +
+    `<button type="button" data-id="${esc(d.id)}" aria-label="Remove ${esc(d.name)}">×</button></li>`).join("")
+    : `<li class="empty">No documents yet. Load the sample handbook or upload your own.</li>`;
+  for (const b of $("docs").querySelectorAll("button"))
+    b.onclick = async () => renderDocs((await ragFetch(`/v1/rag/documents/${b.dataset.id}`, { method: "DELETE" })).documents);
+}
+
+function ragExamples(questions) {
+  $("rag-examples").innerHTML = "";
+  for (const q of questions) {
+    const b = document.createElement("button");
+    b.className = "chip"; b.type = "button"; b.textContent = q;
+    b.onclick = () => { $("rag-q").value = q; ask(); };
+    $("rag-examples").appendChild(b);
+  }
+}
+
+async function loadRag() {
+  try {
+    const d = await ragFetch("/v1/rag/documents");
+    renderDocs(d.documents);
+    ragExamples(d.sample_questions);
+    $("rag-mode").textContent = d.answers
+      ? `Answers by ${d.model}; retrieval with ${d.embedder} embeddings.`
+      : "No LLM key configured: you'll see the screened passages an LLM would receive.";
+  } catch (e) { $("rag-mode").textContent = e.message; }
+}
+
+async function ingest(file) {
+  const d = await ragFetch("/v1/rag/documents", { method: "POST", body: JSON.stringify(file) });
+  const rails = d.verdicts.filter((v) => v.action !== "allow").map((v) => `${esc(v.rail)}: ${esc(v.reason)}`).join("<br>");
+  const note = d.indexed ? (d.action === "redact" ? "Indexed with redactions." : "Indexed.")
+    : (d.action === "block" ? "Blocked: not indexed." : esc(d.error || "Not indexed."));
+  $("rag-ingest").insertAdjacentHTML("beforeend",
+    `<div class="upload"><div class="head"><span class="badge ${d.action}">${d.action}</span>${esc(d.name)}</div>` +
+    `<div class="muted">${note}${rails ? "<br>" + rails : ""}</div></div>`);
+}
+
+function withCitations(text) {
+  return esc(text).replace(/\[(\d{1,2})\]/g, "<sup>[$1]</sup>");
+}
+
+async function ask() {
+  const question = $("rag-q").value.trim();
+  if (!question) return;
+  $("rag-ask").disabled = true;
+  try {
+    const d = await ragFetch("/v1/rag/query", { method: "POST", body: JSON.stringify({ question }) });
+    $("rag-result").hidden = false;
+    // The badge is what happened to the answer; dropped passages are counted beside it.
+    const verdict = d.mode === "blocked" ? "block" : (d.answer_action || "allow");
+    $("rag-action").className = "badge " + verdict; $("rag-action").textContent = verdict;
+    const llm = d.answer_ms ? `, LLM ${(d.answer_ms / 1000).toFixed(1)} s` : "";
+    const dropped = d.passages.filter((p) => p.action === "block").length;
+    const droppedNote = dropped ? `${dropped} poisoned passage(s) dropped · ` : "";
+    $("rag-timing").textContent = `${droppedNote}screening ${d.screen_ms.toFixed(0)} ms${llm}`;
+    const messages = {
+      blocked: "Your question was blocked by the input rails, so nothing was retrieved and no LLM was called.",
+      retrieval_only: d.error ? `${d.error}. Showing the screened passages instead.` : "No LLM key is configured on this server. These are the screened passages an LLM would receive.",
+      error: `The LLM call failed (${d.error}). The screened passages are below.`,
+    };
+    $("rag-answer").innerHTML = d.answer ? withCitations(d.answer) : esc(messages[d.mode] || "");
+    if (d.mode === "blocked") {
+      const v = d.question.verdicts.find((v) => v.action === "block");
+      if (v) $("rag-answer").innerHTML += `<br><span class="muted">${esc(v.rail)}: ${esc(v.reason)}</span>`;
+    }
+    $("rag-passages").innerHTML = d.passages.length ? d.passages.map((p) => {
+      const dropped = p.action === "block";
+      const flags = p.verdicts.filter((v) => v.action !== "allow").map((v) => `${esc(v.rail)}: ${esc(v.reason)}`).join("; ");
+      const label = dropped ? "Dropped before the prompt" : `Source [${p.number}]`;
+      return `<div class="passage${dropped ? " dropped" : ""}"><div class="head"><span class="badge ${p.action}">${p.action}</span>` +
+        `${label} · ${esc(p.document)} <span class="muted">similarity ${p.score.toFixed(2)}</span></div>` +
+        (flags ? `<div class="muted">${flags}</div>` : "") + `<p>${esc(p.text)}</p></div>`;
+    }).join("") : `<div class="empty">No passages retrieved.</div>`;
+    refresh();
+  } catch (e) {
+    $("rag-result").hidden = false;
+    $("rag-action").className = "badge block"; $("rag-action").textContent = "error";
+    $("rag-timing").textContent = ""; $("rag-answer").textContent = e.message; $("rag-passages").innerHTML = "";
+  } finally { $("rag-ask").disabled = false; }
+}
+
+$("rag-sample").onclick = async () => {
+  const d = await ragFetch("/v1/rag/sample", { method: "POST" });
+  renderDocs(d.documents); ragExamples(d.sample_questions); $("rag-ingest").innerHTML = "";
+};
+$("rag-upload").onclick = () => $("rag-file").click();
+$("rag-file").onchange = async (e) => {
+  const picked = [...e.target.files].filter((f) => f.size <= 10 * 1024 * 1024);
+  e.target.value = "";
+  for (const f of await Promise.all(picked.map(readFile))) {
+    try { await ingest(f); } catch (err) { $("rag-ingest").insertAdjacentHTML("beforeend", `<div class="upload muted">${esc(f.name)}: ${esc(err.message)}</div>`); }
+  }
+  loadRag(); refresh();
+};
+$("rag-clear").onclick = async () => { renderDocs((await ragFetch("/v1/rag/documents", { method: "DELETE" })).documents); $("rag-ingest").innerHTML = ""; };
+$("rag-ask").onclick = ask;
+$("rag-q").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) ask(); });
+loadRag();
 </script>
 </body>
 </html>

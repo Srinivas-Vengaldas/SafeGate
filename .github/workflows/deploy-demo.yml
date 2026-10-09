@@ -102,6 +102,13 @@ jobs:
           print('screenshot:', d['action'], d['screen_ms'], 'ms,', f['words_hidden'], 'words hidden')
           assert d['action'] == 'redact', d
           " | tee -a "$GITHUB_STEP_SUMMARY"
+          # Guarded RAG: the sample handbook's planted injection is dropped before the prompt.
+          h='x-safegate-collection: smoke-test-1'
+          curl -sf -X POST localhost:8000/v1/rag/sample -H "$h" > /dev/null
+          curl -sf localhost:8000/v1/rag/query -H 'content-type: application/json' -H "$h" \
+            -d '{"question":"How do I reset my password?"}' \
+            | python3 -c "import json, sys; d = json.load(sys.stdin); dropped = [p['document'] for p in d['passages'] if p['action'] == 'block']; print('rag:', d['mode'], 'dropped', dropped, d['screen_ms'], 'ms'); assert dropped == ['vendor-faq.md'], d" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
           docker stats --no-stream demo
           test "$(docker inspect -f '{{.State.OOMKilled}}' demo)" = false
           # The weights are a memory-mapped file, so the process's RSS includes ~170 MB of page

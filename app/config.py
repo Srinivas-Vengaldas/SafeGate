@@ -20,6 +20,33 @@ class Settings(BaseSettings):
     # sets it (Render, a load balancer); otherwise clients could pick their own identity.
     trust_forwarded_for: bool = False
 
+    # Retrieval-augmented answers (/v1/rag/*). Any OpenAI-compatible endpoint works; for Gemini
+    # use https://generativelanguage.googleapis.com/v1beta/openai and a Gemini model name.
+    # Empty base URL and key fall back to the upstream ones. Without any key, queries return the
+    # screened passages but no generated answer.
+    rag_base_url: str = ""
+    rag_api_key: str = ""
+    rag_chat_model: str = "gpt-4o-mini"
+    # Empty: a built-in hashing embedder (matches shared words, needs no model or key).
+    rag_embed_model: str = ""
+    rag_top_k: int = 4
+    rag_ttl_s: int = 3600  # collections are dropped after this long without use
+    rag_max_documents: int = 20  # per collection
+    rag_max_passages: int = 300  # per collection
+    rag_max_collections: int = 50
+    # Generated answers per client per minute, and across all clients per day: a server-side
+    # key pays for every answer, so these cap what a public demo can spend.
+    rag_answers_per_minute: int = 6
+    rag_answers_per_day: int = 500
+
+    @property
+    def rag_url(self) -> str:
+        return self.rag_base_url or self.upstream_base_url
+
+    @property
+    def rag_key(self) -> str:
+        return self.rag_api_key or self.upstream_api_key
+
 
 @lru_cache
 def get_settings() -> Settings:

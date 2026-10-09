@@ -12,3 +12,9 @@ COPY --chown=safegate policy.yaml /srv/policies/default.yaml
 ENV SAFEGATE_SPACY_MODEL=blank
 # Render's proxy sets X-Forwarded-For, so the rate limit can count visitors individually.
 ENV SAFEGATE_TRUST_FORWARDED_FOR=true
+# Guarded RAG answers come from Gemini's OpenAI-compatible endpoint. They are only generated once
+# SAFEGATE_RAG_API_KEY is set on the host (a key for RAG only, so the public chat proxy never
+# spends it); until then the playground shows the screened passages without an answer.
+ENV SAFEGATE_RAG_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai \
+    SAFEGATE_RAG_CHAT_MODEL=gemini-2.5-flash \
+    SAFEGATE_RAG_EMBED_MODEL=gemini-embedding-001

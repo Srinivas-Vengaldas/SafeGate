@@ -29,6 +29,11 @@ leaving headroom under 512 MB, and only then pushes it to `ghcr.io/srinivas-veng
 3. **Turn on automatic redeploys.** In the Render service, open **Settings → Deploy Hook** and
    copy the URL. In this GitHub repo, open **Settings → Secrets and variables → Actions** and add
    it as the secret `RENDER_DEPLOY_HOOK`.
+4. **Optional: answers for the RAG panel.** Create a Gemini API key at
+   <https://aistudio.google.com/apikey>. In the Render service, open **Environment**, add
+   `SAFEGATE_RAG_API_KEY` with the key as its value, and save (Render redeploys). Use this name,
+   not `SAFEGATE_UPSTREAM_API_KEY`: the RAG key only pays for RAG answers, which are capped per
+   visitor and per day, while an upstream key would let anyone use the public chat endpoint on it.
 
 ## Notes
 
@@ -36,5 +41,6 @@ leaving headroom under 512 MB, and only then pushes it to `ghcr.io/srinivas-veng
   minute to wake. Open the link shortly before an interview.
 - The decision log uses SQLite inside the container, so it resets when the service restarts.
   Production deployments use PostgreSQL via `docker-compose.yml`.
-- No LLM key is configured, so the demo only screens prompts. Callers of
-  `/v1/chat/completions` must send their own key, which is passed through and never stored.
+- No upstream LLM key is configured, so callers of `/v1/chat/completions` must send their own
+  key, which is passed through and never stored. Without `SAFEGATE_RAG_API_KEY`, the RAG panel
+  shows the screened passages without a generated answer.

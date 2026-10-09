@@ -20,11 +20,14 @@ Details and caveats are under [Results](#results).
 
 ## Demo
 
-Open `http://localhost:8000/` after `docker compose up`. The page has two panels:
+Open `http://localhost:8000/` after `docker compose up`. The page has three panels:
 
 - **Playground:** type a prompt (or pick an example attack) and see each rail's verdict, score and
   reason, plus exactly what the LLM would receive after redaction. Switch to **Model reply** to
   run the output rails (PII redaction, toxicity) on a reply instead.
+- **Ask your documents:** a guarded RAG pipeline. Load the sample handbook (or upload your own
+  files) and ask a question; the page shows the answer with citations and every retrieved
+  passage, including any dropped by the rails before they reached the prompt.
 - **Live monitor:** request counts by verdict, blocks and redactions per rail, p50/p95 screening
   latency, and the most recent audit-log entries, refreshed every few seconds.
 
@@ -78,6 +81,9 @@ explains the block with `finish_reason: "content_filter"`. Requests over a polic
 | --- | --- |
 | `POST /v1/chat/completions` | OpenAI-compatible proxy, including `stream: true` passthrough |
 | `POST /v1/check` | Screen text, and optionally `files` (images or documents as data URLs), without calling an LLM; returns per-rail verdicts. `"stage": "output"` runs the output rails |
+| `POST /v1/rag/documents` | Screen a document (text, or a file as a data URL) and index it unless blocked; `GET` lists, `DELETE` removes. Scoped by `X-SafeGate-Collection` |
+| `POST /v1/rag/query` | Answer a question from the indexed documents, with rails on the question, each retrieved passage and the answer |
+| `POST /v1/rag/sample` | Load a sample company handbook, with one planted poisoned document |
 | `GET /v1/decisions` | Audit log; filters: `app`, `action`, `rail` (blocking rail), `since`, `until`, `limit`, `offset` |
 | `GET /v1/stats` | Dashboard aggregates over recent decisions: counts by verdict and rail, p50/p95 latency |
 | `GET /v1/policy` | The active policy (rails and their order) |
@@ -105,6 +111,33 @@ content parts (`image_url` with a data URL, or `file` with `file_data`):
   lets them through unscreened). Scanned PDFs without a text layer aren't OCR'd yet.
 
 Limits are per policy under `attachments:` (size, pages, characters, OCR language).
+
+### Guarded RAG
+
+`/v1/rag/*` is a small retrieval-augmented question answering pipeline with the rails at every
+step where untrusted text can enter:
+
+```
+upload   -> extract text (OCR, PDF, Word) -> input rails -> split into passages -> embed -> index
+question -> input rails -> embed -> retrieve top k -> input rails on each passage -> LLM -> output rails
+```
+
+- **Ingestion:** a document that fails screening is never indexed; one with PII or secrets is
+  indexed redacted.
+- **Retrieval:** passages are screened again before they enter the prompt, and any that fail are
+  dropped. This is the defence against indirect injection: text that reached the index some other
+  way (a synced wiki, a shared drive, a document indexed before the policy changed). The sample
+  handbook plants one such document, indexed without screening, to show it being caught.
+- **Generation:** the prompt tells the model the sources are data, not instructions, and to cite
+  them as `[n]`; citations of sources that don't exist are removed. The answer goes through the
+  output rails like any reply.
+
+Any OpenAI-compatible endpoint can answer: set `SAFEGATE_RAG_BASE_URL`, `SAFEGATE_RAG_API_KEY`
+and `SAFEGATE_RAG_CHAT_MODEL` (the public demo uses Gemini). `SAFEGATE_RAG_EMBED_MODEL` selects an
+embedding model; without one, or if it fails, a built-in hashing embedder matches on shared words
+with no model at all. Without a key, queries return the screened passages an LLM would receive.
+The index lives in memory per collection and expires after an hour idle; generated answers are
+capped per client and per day, since a server-side key pays for them.
 
 ## Policies
 
@@ -212,7 +245,8 @@ Never commit `.env`.
 - [x] ONNX int8 export served without PyTorch; demo fits in 512 MB
 - [x] **Week 3:** output rails (PII redaction, toxicity), Redis rate limiting and verdict cache, Grafana dashboard, garak scan of bare LLM vs. SafeGate, latency benchmark
 - [x] **Week 4:** results table, architecture diagram, demo video, baseline comparison with ProtectAI's model; ONNX export (done in Week 2), public deploy on Render's free tier
-- [ ] Next: run both injection models together, an NLI grounding check on replies, training data for indirect injection
+- [x] Image, screenshot and document screening (OCR, PDF, Word); guarded RAG with retrieval-time screening
+- [ ] Next: a poisoned-retrieval benchmark, run both injection models together, an NLI grounding check on replies, training data for indirect injection
 
 ## Results
 

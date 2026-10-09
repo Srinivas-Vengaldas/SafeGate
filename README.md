@@ -255,7 +255,7 @@ ONNX Runtime memory-maps the weights instead of copying them onto the heap (copy
 
 [eval/latency_bench.py](eval/latency_bench.py) sends 1,000 chat completions per target, one at a
 time, to an instant mock LLM, so the numbers are what SafeGate adds and nothing else. Prompts are
-the 150 tricky-benign ones, which pass every rail (except the 4.6% the classifier wrongly blocks)
+the 150 tricky-benign ones, which pass every rail (4.6% of requests were wrongly blocked)
 and so take the slowest path. Full policy: rules, PII and the injection classifier on the prompt;
 PII and Detoxify toxicity on the reply. GitHub Actions runner, 4 vCPUs
 ([reports/latency/latency.md](reports/latency/latency.md)).

@@ -191,8 +191,8 @@ async def record(url: str, out: Path, chromium: str | None = None) -> Path:
             "Measured, not assumed",
             [
                 "garak red-team attack success: 31.9% on the bare LLM, 5.0% behind SafeGate",
-                "Injection classifier: 84% recall on attacks from a dataset it never trained on",
-                "3.3% false positives on hand-written prompts that look dangerous but are safe",
+                "Injection classifier: 85% recall on attacks from a dataset it never trained on",
+                "4.7% false positives on hand-written prompts that look dangerous but are safe",
                 "+45 ms median latency for the full rail stack; ~1 ms when cached",
                 "github.com/Srinivas-Vengaldas/SafeGate",
             ],

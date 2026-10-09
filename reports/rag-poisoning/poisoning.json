@@ -1,0 +1,108 @@
+{
+  "Document rails (default context rails)": {
+    "counts": {
+      "clean": 400,
+      "gandalf": 150,
+      "addressed": 80,
+      "unaddressed": 30
+    },
+    "blocked": {
+      "clean": 0,
+      "gandalf": 42,
+      "addressed": 30,
+      "unaddressed": 0
+    },
+    "rates": {
+      "clean": 0.0,
+      "gandalf": 0.28,
+      "addressed": 0.375,
+      "unaddressed": 0.0
+    },
+    "caught_all": 0.27692307692307694,
+    "false_drop": 0.0,
+    "blocked_by": {
+      "rules": 72
+    },
+    "p50_ms": 1.2224744999969062
+  },
+  "Prompt rails (rules + classifier)": {
+    "counts": {
+      "clean": 400,
+      "gandalf": 150,
+      "addressed": 80,
+      "unaddressed": 30
+    },
+    "blocked": {
+      "clean": 2,
+      "gandalf": 82,
+      "addressed": 32,
+      "unaddressed": 0
+    },
+    "rates": {
+      "clean": 0.005,
+      "gandalf": 0.5466666666666666,
+      "addressed": 0.4,
+      "unaddressed": 0.0
+    },
+    "caught_all": 0.43846153846153846,
+    "false_drop": 0.005,
+    "blocked_by": {
+      "injection": 92,
+      "rules": 24
+    },
+    "p50_ms": 47.52548350001007
+  },
+  "Classifier only": {
+    "counts": {
+      "clean": 400,
+      "gandalf": 150,
+      "addressed": 80,
+      "unaddressed": 30
+    },
+    "blocked": {
+      "clean": 2,
+      "gandalf": 80,
+      "addressed": 31,
+      "unaddressed": 0
+    },
+    "rates": {
+      "clean": 0.005,
+      "gandalf": 0.5333333333333333,
+      "addressed": 0.3875,
+      "unaddressed": 0.0
+    },
+    "caught_all": 0.4269230769230769,
+    "false_drop": 0.005,
+    "blocked_by": {
+      "injection": 113
+    },
+    "p50_ms": 45.6136944999912
+  },
+  "Document rails + classifier": {
+    "counts": {
+      "clean": 400,
+      "gandalf": 150,
+      "addressed": 80,
+      "unaddressed": 30
+    },
+    "blocked": {
+      "clean": 2,
+      "gandalf": 86,
+      "addressed": 50,
+      "unaddressed": 0
+    },
+    "rates": {
+      "clean": 0.005,
+      "gandalf": 0.5733333333333334,
+      "addressed": 0.625,
+      "unaddressed": 0.0
+    },
+    "caught_all": 0.5230769230769231,
+    "false_drop": 0.005,
+    "blocked_by": {
+      "injection": 66,
+      "rules": 72
+    },
+    "p50_ms": 46.04468850001808
+  }
+}

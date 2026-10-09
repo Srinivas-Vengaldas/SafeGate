@@ -1,0 +1,70 @@
+{
+  "seed": 42,
+  "near_dup_threshold": 0.8,
+  "holdout_source": "Lakera/gandalf_ignore_instructions",
+  "dedupe": {
+    "input": 6968,
+    "groups": 6819,
+    "duplicates_removed": 149,
+    "conflicting_groups_dropped": 1,
+    "output": 6818
+  },
+  "holdout_dedupe": {
+    "input": 1000,
+    "groups": 999,
+    "duplicates_removed": 1,
+    "conflicting_groups_dropped": 0,
+    "output": 999
+  },
+  "holdout_removed_for_overlap_with_training_side": 0,
+  "removed_for_overlap_with_eval_set": 0,
+  "splits": {
+    "train": {
+      "total": 5454,
+      "injection": 643,
+      "benign": 4811,
+      "by_source": {
+        "codealpaca/benign": 2000,
+        "deepset/benign": 318,
+        "deepset/injection": 200,
+        "dolly/benign": 1983,
+        "jackhhao/benign": 510,
+        "jackhhao/injection": 443
+      }
+    },
+    "val": {
+      "total": 682,
+      "injection": 80,
+      "benign": 602,
+      "by_source": {
+        "codealpaca/benign": 250,
+        "deepset/benign": 40,
+        "deepset/injection": 25,
+        "dolly/benign": 248,
+        "jackhhao/benign": 64,
+        "jackhhao/injection": 55
+      }
+    },
+    "test": {
+      "total": 682,
+      "injection": 80,
+      "benign": 602,
+      "by_source": {
+        "codealpaca/benign": 250,
+        "deepset/benign": 40,
+        "deepset/injection": 25,
+        "dolly/benign": 248,
+        "jackhhao/benign": 64,
+        "jackhhao/injection": 55
+      }
+    },
+    "holdout": {
+      "total": 999,
+      "injection": 999,
+      "benign": 0,
+      "by_source": {
+        "gandalf/injection": 999
+      }
+    }
+  }
+}

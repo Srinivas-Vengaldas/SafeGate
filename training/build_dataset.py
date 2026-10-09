@@ -287,12 +287,19 @@ def main() -> None:
     parser.add_argument("--test", type=float, default=0.1)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
+        "--indirect",
+        type=int,
+        default=500,
+        help="Prompt attacks pasted into passages across all splits (0 = no document examples)",
+    )
+    parser.add_argument(
         "--exclude",
         type=Path,
         default=Path("eval/tricky_benign.jsonl"),
         help="Evaluation prompts that must not appear (even nearly) in any split",
     )
     args = parser.parse_args()
+    from training import indirect  # it builds on this module's Example
 
     args.out.mkdir(parents=True, exist_ok=True)
     loaded = {key: load_source(key, args.seed) for key in SOURCES}
@@ -300,6 +307,13 @@ def main() -> None:
         print(f"loaded {len(rows):>6} from {SOURCES[key].name}")
 
     pool = [ex for key, rows in loaded.items() if key != args.holdout for ex in rows]
+    hosts: list[str] = []
+    if args.indirect:
+        hosts = indirect.load_hosts(args.seed)
+        documents = indirect.build(hosts, args.seed)
+        hosts = hosts[len(documents) :]
+        print(f"built  {len(documents):>6} document passages, {len(hosts)} hosts left")
+        pool += documents
     pool, dedupe_stats = dedupe(pool, args.near_dup, args.seed)
     excluded = 0
     if args.exclude.exists():
@@ -308,6 +322,13 @@ def main() -> None:
     holdout, holdout_dedupe = dedupe(loaded[args.holdout], args.near_dup, args.seed)
     holdout, overlap = remove_overlap(holdout, pool, args.near_dup, args.seed)
     train, val, test = stratified_split(pool, args.val, args.test, args.seed)
+    if args.indirect:
+        # Paste each split's own prompt attacks into unused passages, so no attack crosses splits.
+        for split, share in ((train, 1 - args.val - args.test), (val, args.val), (test, args.test)):
+            limit = round(args.indirect * share)
+            split += indirect.embed_attacks(split, hosts[:limit], args.seed, limit)
+            hosts = hosts[limit:]
+            random.Random(args.seed).shuffle(split)
 
     write_jsonl(args.out / "train.jsonl", train)
     write_jsonl(args.out / "val.jsonl", val)

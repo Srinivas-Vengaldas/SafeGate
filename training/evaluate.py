@@ -35,6 +35,20 @@ def read_jsonl(path: Path, default_label: int | None = None) -> tuple[list[str],
     return [r["text"] for r in rows], np.array(labels, dtype=int)
 
 
+def split_by_kind(path: Path) -> dict[str, tuple[list[str], np.ndarray]]:
+    """The test split's prompts and its document passages (sources named indirect*), apart."""
+    out: dict[str, tuple[list[str], np.ndarray]] = {}
+    for kind, is_document in (("test_prompts", False), ("test_documents", True)):
+        rows = [
+            r
+            for r in read_jsonl_rows(path)
+            if r.get("source", "").startswith("indirect") == is_document
+        ]
+        if rows:
+            out[kind] = ([r["text"] for r in rows], np.array([r["label"] for r in rows], dtype=int))
+    return out
+
+
 def binary_metrics(labels: np.ndarray, preds: np.ndarray) -> dict[str, float | int]:
     tp = int(((preds == 1) & (labels == 1)).sum())
     fp = int(((preds == 1) & (labels == 0)).sum())
@@ -169,6 +183,9 @@ def to_markdown(report: dict) -> str:
         ("Test recall", "test", "recall"),
         ("Test F1", "test", "f1"),
         ("Test false-positive rate", "test", "fpr"),
+        ("Test F1, prompts only", "test_prompts", "f1"),
+        ("Test recall, document passages", "test_documents", "recall"),
+        ("Test false-positive rate, document passages", "test_documents", "fpr"),
         ("Held-out source recall", "holdout", "recall"),
         ("Tricky-benign false-positive rate", "tricky_benign", "fpr"),
     ]
@@ -180,6 +197,8 @@ def to_markdown(report: dict) -> str:
         "| --- | ---: | ---: |",
     ]
     for label, split, key in rows:
+        if split not in report["classifier"]:
+            continue
         base = report["rules_baseline"][split][key]
         model = report["classifier"][split][key]
         lines.append(f"| {label} | {base:.1%} | {model:.1%} |")
@@ -220,6 +239,7 @@ def main() -> None:
         "test": read_jsonl(args.data / "test.jsonl"),
         "holdout": read_jsonl(args.data / "holdout.jsonl"),
         "tricky_benign": read_jsonl(args.tricky, default_label=0),
+        **split_by_kind(args.data / "test.jsonl"),
     }
     val_texts, val_labels = read_jsonl(args.data / "val.jsonl")
 

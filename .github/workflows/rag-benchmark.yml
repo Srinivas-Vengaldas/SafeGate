@@ -6,6 +6,10 @@ name: Poisoned-retrieval benchmark
 
 on:
   workflow_dispatch:
+    inputs:
+      injection_run:
+        description: Training run whose classifier to test (blank = the one the demo serves)
+        default: ""
 
 permissions:
   contents: write
@@ -27,8 +31,9 @@ jobs:
       - name: Fetch the trained classifier
         env:
           GH_TOKEN: ${{ github.token }}
+          INJECTION_RUN: ${{ inputs.injection_run }}
         run: |
-          deploy/fetch_models.sh /tmp/models
+          deploy/fetch_models.sh /tmp/models | tee -a "$GITHUB_STEP_SUMMARY"
           mkdir -p models /tmp/policy
           cp -r /tmp/models/injection-onnx models/injection-onnx
           python deploy/make_policy.py policies/default.yaml /tmp/policy/default.yaml \

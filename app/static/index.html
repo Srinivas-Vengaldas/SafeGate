@@ -437,7 +437,11 @@ async function ingest(file) {
 }
 
 function withCitations(text) {
-  return esc(text).replace(/\[(\d{1,2})\]/g, "<sup>[$1]</sup>");
+  // Escaped first, so only these few marks become markup: bold, code and citations.
+  return esc(text)
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+    .replace(/\[(\d{1,2})\]/g, "<sup>[$1]</sup>");
 }
 
 async function ask() {

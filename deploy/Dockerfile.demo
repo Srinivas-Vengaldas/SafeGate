@@ -19,4 +19,5 @@ ENV SAFEGATE_TRUST_FORWARDED_FOR=true
 # versioned model don't break the demo; Flash-Lite answers when Flash is overloaded. GET /v1/rag/models lists what the key can use.
 ENV SAFEGATE_RAG_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai \
     SAFEGATE_RAG_CHAT_MODEL=gemini-flash-latest,gemini-flash-lite-latest \
-    SAFEGATE_RAG_EMBED_MODEL=gemini-embedding-001
+    SAFEGATE_RAG_EMBED_MODEL=gemini-embedding-001 \
+    SAFEGATE_RAG_REASONING_EFFORT=low

@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     rag_api_key: str = ""
     # Comma-separated: later models answer when earlier ones are busy (rate limited, overloaded).
     rag_chat_model: str = "gpt-4o-mini"
+    # Passed as reasoning_effort to thinking models (e.g. "low"); empty sends nothing.
+    rag_reasoning_effort: str = ""
     # Empty: a built-in hashing embedder (matches shared words, needs no model or key).
     rag_embed_model: str = ""
     rag_top_k: int = 4

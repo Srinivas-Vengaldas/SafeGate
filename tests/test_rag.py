@@ -333,3 +333,24 @@ def test_embeddings_without_an_index_field(settings):
         client.post("/v1/rag/sample", headers=ALICE)
         info = client.get("/v1/rag/documents", headers=ALICE).json()
     assert info["embedder"] == "gemini-like" and info["embedder_error"] is None
+
+
+@respx.mock
+def test_reasoning_effort_is_dropped_when_a_model_rejects_it(settings):
+    seen = []
+
+    def reply(request):
+        body = json.loads(request.content)
+        seen.append("reasoning_effort" in body)
+        if "reasoning_effort" in body:
+            return httpx.Response(400, json={"error": {"message": "unknown field"}})
+        return completion("20 days [1].")
+
+    respx.post(f"{UPSTREAM}/chat/completions").mock(side_effect=reply)
+    settings = settings.model_copy(update={"rag_reasoning_effort": "low"})
+    with TestClient(create_app(settings)) as client:
+        client.post("/v1/rag/sample?name=handbook", headers=ALICE)
+        body = client.post(
+            "/v1/rag/query", json={"question": "How many vacation days do I get?"}, headers=ALICE
+        ).json()
+    assert body["mode"] == "answer" and seen == [True, False]

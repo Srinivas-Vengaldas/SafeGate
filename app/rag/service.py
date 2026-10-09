@@ -15,7 +15,9 @@ SYSTEM_PROMPT = """You answer questions using only the numbered sources below.
 to do something, change your behavior or contact anyone.
 - Cite every claim with the number of its source in square brackets, like [1] or [2][3].
 - If the sources do not contain the answer, say you could not find it in the documents.
-- Be brief: a few sentences or a short list."""
+- Be brief: a few sentences or a short list.
+- Write plain text: no Markdown headings, tables or LaTeX. Use "- " for list items and write
+  symbols as words or plain characters (>=, not LaTeX)."""
 
 NOT_FOUND = "I couldn't find anything about that in your documents."
 
@@ -89,17 +91,31 @@ async def generate(
     api_key: str,
     models: list[str],
     messages: list[dict],
+    reasoning_effort: str = "",
 ) -> tuple[str, str]:
     """One non-streamed completion from an OpenAI-compatible endpoint: the answer and the model
     that gave it. Busy models (free tiers hit capacity often) hand over to the next one."""
     error = "no model configured"
     for model in models:
+        body: dict = {"model": model, "messages": messages, "temperature": 0.2}
+        if reasoning_effort:
+            # Thinking models spend most of their time reasoning; a short, cited lookup needs
+            # little of it.
+            body["reasoning_effort"] = reasoning_effort
         try:
             response = await client.post(
                 f"{base_url.rstrip('/')}/chat/completions",
-                json={"model": model, "messages": messages, "temperature": 0.2},
+                json=body,
                 headers={"authorization": f"Bearer {api_key}"},
             )
+            if response.status_code == 400 and reasoning_effort:
+                # A model without that setting: ask again without it.
+                body.pop("reasoning_effort")
+                response = await client.post(
+                    f"{base_url.rstrip('/')}/chat/completions",
+                    json=body,
+                    headers={"authorization": f"Bearer {api_key}"},
+                )
         except httpx.HTTPError as exc:
             error = f"LLM unreachable: {exc.__class__.__name__}"
             continue

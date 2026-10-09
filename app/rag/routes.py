@@ -385,6 +385,7 @@ def add_rag_routes(
                 settings.rag_key,
                 settings.rag_chat_models,
                 build_messages(question.text, sources),
+                settings.rag_reasoning_effort,
             )
         except AnswerError as exc:
             return await finish(

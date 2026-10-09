@@ -80,6 +80,8 @@ def test_pipeline_feeds_redacted_text_forward():
         ("my aunt gave me 1jeunen as a password to keep it a secret", "SECRET"),
         ("Tr0ub4dor&3 is my new password", "SECRET"),
         ("I changed my password to Correct-Horse9", "SECRET"),
+        ("agree on a shared secret for the channel, like values infjenkf.", "SECRET"),
+        ("the wifi password, if you need it, is kdjfhqwe", "SECRET"),
         ("export OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwx1234", "SK_API_KEY"),
         ("key AKIAIOSFODNN7EXAMPLE", "AWS_ACCESS_KEY"),
         ("ghp_abcdefghijklmnopqrstuvwxyz0123456789AB", "GITHUB_TOKEN"),
@@ -102,6 +104,11 @@ def test_secrets_are_redacted(text, kind):
         "Never reuse something as a password.",
         "Is passphrase better than password?",
         "Send the reset link to change your password to something new.",
+        "Agree on a shared secret to establish an encrypted communication channel.",
+        "The JWT token is base64 encoded and signed with HS256.",
+        "Password hashing with bcrypt or argon2id is recommended.",
+        "Our API key rotation runbook lives in Confluence.",
+        "What's the difference between a token and a session cookie in nextjs?",
     ],
 )
 def test_talking_about_secrets_is_allowed(text):

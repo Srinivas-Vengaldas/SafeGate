@@ -120,6 +120,12 @@ rate_limit:                   # per client (API key, else IP) and app
   per_seconds: 60
 ```
 
+The secrets rail knows the documented shapes of common keys and tokens. It also catches
+passwords written out in prose ("my wifi password is kdjfhqwe", "she gave me 1jeunen as a
+password"). An English word list and a character trigram model separate made-up strings from
+real words and jargon. A lowercase password that reads like a real word, such as "sunshine",
+still gets through.
+
 Rate-limit counters and cached verdicts live in Redis when `SAFEGATE_REDIS_URL` is set (docker
 compose sets it), so several gateway replicas share them; without it each process keeps its own.
 Redis errors fail open: an outage of an auxiliary store should not take the gateway down.

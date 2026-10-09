@@ -52,7 +52,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout --orphan "rag-poisoning/${{ github.run_id }}"
-          git rm -rq --cached .
+          git rm -rqf --cached .
           git add -f reports/rag-poisoning
           git commit -m "Poisoned-retrieval benchmark from run ${{ github.run_id }}"
           git push origin "rag-poisoning/${{ github.run_id }}"

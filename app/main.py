@@ -92,7 +92,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         started = time.perf_counter()
         result = await _screen(loaded, body.text, body.stage)
         screen_ms = (time.perf_counter() - started) * 1000
-        await _record(request_id, policy.name, "check", body.text, [result], screen_ms)
+        endpoint = "check" if body.stage == "input" else "check_output"
+        await _record(request_id, policy.name, endpoint, body.text, [result], screen_ms)
         return {
             "request_id": request_id,
             "action": result.action.value,

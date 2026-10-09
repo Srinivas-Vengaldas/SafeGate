@@ -33,29 +33,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          mkdir -p /tmp/demo
-          # Newest successful training run that exported an ONNX model.
-          for run_id in $(gh run list --workflow train.yml --status success --limit 20 \
-              --json databaseId --jq '.[].databaseId'); do
-            if gh run download "$run_id" --name injection-onnx --dir /tmp/demo/model 2>/dev/null; then
-              gh run download "$run_id" --name reports --dir /tmp/reports
-              threshold=$(python -c "import json; print(json.load(open('/tmp/reports/onnx/metrics.json'))['threshold'])")
-              echo "Using the classifier from training run $run_id (threshold $threshold)"
-              # Models exported before weights moved to a memory-mapped file get converted here.
-              if [ ! -f /tmp/demo/model/model.onnx.data ]; then
-                pip install --quiet onnx numpy
-                python -m training.export_onnx --externalize /tmp/demo/model
-              fi
-              break
-            fi
-          done
-          if [ ! -d /tmp/demo/model ]; then
-            echo "No exported classifier yet; the demo runs the rules and PII rails only"
-            mkdir -p /tmp/demo/model
+          deploy/fetch_models.sh /tmp/models
+          mkdir -p /tmp/demo/injection-onnx /tmp/demo/toxicity-onnx
+          args=(--rate-limit 30)
+          if [ -f /tmp/models/injection-threshold ]; then
+            cp -r /tmp/models/injection-onnx/. /tmp/demo/injection-onnx/
+            args+=(--injection-threshold "$(cat /tmp/models/injection-threshold)")
+          else
+            echo "No exported classifier yet; the demo runs without the injection rail"
+          fi
+          if [ -d /tmp/models/toxicity-onnx ]; then
+            cp -r /tmp/models/toxicity-onnx/. /tmp/demo/toxicity-onnx/
+            args+=(--toxicity-model models/toxicity-onnx)
           fi
           pip install --quiet pyyaml
-          python deploy/make_policy.py policies/default.yaml /tmp/demo/policy.yaml --rate-limit 30 \
-            ${threshold:+--injection-threshold "$threshold"}
+          python deploy/make_policy.py policies/default.yaml /tmp/demo/policy.yaml "${args[@]}"
           cp deploy/Dockerfile.demo /tmp/demo/Dockerfile
           cat /tmp/demo/policy.yaml
 
@@ -83,6 +75,10 @@ jobs:
               -d '{"text":"Draft a good morning message"}' \
               | python3 -c "import json, sys; d = json.load(sys.stdin); print(d['action'], d['screen_ms'], 'ms')"
           done | tee -a "$GITHUB_STEP_SUMMARY"
+          curl -sf localhost:8000/v1/check -H 'content-type: application/json' \
+            -d '{"text":"You are a worthless idiot.","stage":"output"}' \
+            | python3 -c "import json, sys; d = json.load(sys.stdin); print('reply:', d['action'], d['screen_ms'], 'ms')" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
           # A long prompt (under the rules rail's length limit) runs several classifier windows.
           python3 -c "import json; print(json.dumps({'text': 'Summarize this report. ' * 300}))" \
             | curl -sf localhost:8000/v1/check -H 'content-type: application/json' -d @- \

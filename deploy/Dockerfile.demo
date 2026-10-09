@@ -1,10 +1,11 @@
 # Public demo image: the gateway image plus the trained classifier, tuned for a 512 MB host.
-# Built by .github/workflows/deploy-demo.yml from a directory holding the exported ONNX model
-# (model/) and the demo policy (policy.yaml).
+# Built by .github/workflows/deploy-demo.yml from a directory holding the exported ONNX models
+# (injection-onnx/, toxicity-onnx/; either may be empty) and the demo policy (policy.yaml).
 ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 
-COPY --chown=safegate model /srv/models/injection-onnx
+COPY --chown=safegate injection-onnx /srv/models/injection-onnx
+COPY --chown=safegate toxicity-onnx /srv/models/toxicity-onnx
 COPY --chown=safegate policy.yaml /srv/policies/default.yaml
 
 # Tokenizer-only spaCy pipeline: pattern-based PII detection still works and it saves ~80 MB.

@@ -21,11 +21,23 @@ KNOWN_FORMATS: dict[str, str] = {
     "CONNECTION_STRING": r"\b[a-z][a-z0-9+.-]*://[^\s:/@]+:[^\s@/]+@[^\s/]+",
 }
 
-# A value introduced by a credential word: "password is hunter2!", "API_KEY=...", "token: ...".
-_ASSIGNED = re.compile(
-    r"\b(?:pass(?:word|wd|phrase)?|pwd|api[\s_-]?(?:key|secret|token)|secret(?:[\s_-]?key)?"
+_CREDENTIAL = (
+    r"(?:pass(?:word|wd|phrase)?|pwd|api[\s_-]?(?:key|secret|token)|secret(?:[\s_-]?key)?"
     r"|access[\s_-]?(?:key|token)|auth[\s_-]?token|bearer|token|client[\s_-]?secret)"
-    r"(?:\s+(?:value|for\s+\S+))?\s*(?:is|=|:|was|->)\s*[\"'`]?(?P<value>[^\s\"'`,;]{6,})",
+)
+_VALUE = r"[\"'`]?(?P<value>[^\s\"'`,;]{6,})"
+
+# A value introduced by a credential word: "password is hunter2!", "API_KEY=...", "token: ...",
+# "changed my password to Tr0ub4dor".
+_ASSIGNED = re.compile(
+    rf"\b{_CREDENTIAL}(?:\s+(?:value|for\s+\S+))?\s*(?:is|=|:|was|->|to)\s*{_VALUE}",
+    re.IGNORECASE,
+)
+# A value named as a credential after the fact: "she gave me 1jeunen as a password",
+# "hunter2! is my password".
+_NAMED = re.compile(
+    rf"{_VALUE}[\"'`]?\s+(?:as|is|was)\s+(?:(?:my|a|the|our|your|his|her|their)\s+)?"
+    rf"(?:new\s+|current\s+|old\s+)?{_CREDENTIAL}\b",
     re.IGNORECASE,
 )
 
@@ -38,7 +50,9 @@ def _entropy(value: str) -> float:
 def _looks_secret(value: str) -> bool:
     """Plain words ("password is required", "token is missing") are not secrets; values that
     mix character classes or look random are."""
-    if value.lower() in {"required", "missing", "invalid", "expired", "correct", "incorrect"}:
+    word = value.rstrip(".!?)")
+    if word.isalpha() and (word.islower() or word.istitle()):
+        # An ordinary word ("something", "Required"), even one with many distinct letters.
         return False
     classes = sum(
         bool(re.search(p, value)) for p in (r"[a-z]", r"[A-Z]", r"[0-9]", r"[^A-Za-z0-9]")
@@ -72,7 +86,7 @@ class SecretsRail:
             for name, pattern in self.patterns.items()
             for m in pattern.finditer(text)
         ]
-        for m in _ASSIGNED.finditer(text):
+        for m in [*_ASSIGNED.finditer(text), *_NAMED.finditer(text)]:
             value = m.group("value")
             if _looks_secret(value):
                 spans.append((m.start("value"), m.end("value"), "SECRET"))

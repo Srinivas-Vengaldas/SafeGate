@@ -77,6 +77,9 @@ def test_pipeline_feeds_redacted_text_forward():
     [
         ("for the repo the APIsecret value is i0ijieqwjd9u9", "SECRET"),
         ("my password is hunter2!", "SECRET"),
+        ("my aunt gave me 1jeunen as a password to keep it a secret", "SECRET"),
+        ("Tr0ub4dor&3 is my new password", "SECRET"),
+        ("I changed my password to Correct-Horse9", "SECRET"),
         ("export OPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwx1234", "SK_API_KEY"),
         ("key AKIAIOSFODNN7EXAMPLE", "AWS_ACCESS_KEY"),
         ("ghp_abcdefghijklmnopqrstuvwxyz0123456789AB", "GITHUB_TOKEN"),
@@ -96,6 +99,9 @@ def test_secrets_are_redacted(text, kind):
         "The token is a unit of text in LLMs.",
         "How do I store an API key securely?",
         "Your password must be longer than eight characters.",
+        "Never reuse something as a password.",
+        "Is passphrase better than password?",
+        "Send the reset link to change your password to something new.",
     ],
 )
 def test_talking_about_secrets_is_allowed(text):

@@ -3,6 +3,13 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /srv
 
+# Tesseract reads text in attached images and screenshots. One OCR thread: it shares a small CPU
+# budget with the classifiers.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tesseract-ocr \
+ && rm -rf /var/lib/apt/lists/*
+ENV OMP_THREAD_LIMIT=1
+
 COPY pyproject.toml ./
 COPY app ./app
 # The injection classifier is served as an int8 ONNX model, so the image needs ONNX Runtime

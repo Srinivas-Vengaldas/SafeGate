@@ -16,6 +16,7 @@ jobs:
           cache: pip
       - name: Install
         run: |
+          sudo apt-get update -q && sudo apt-get install -y -q tesseract-ocr
           pip install torch --index-url https://download.pytorch.org/whl/cpu
           pip install -e ".[dev,ml]"
           python -m spacy download en_core_web_sm

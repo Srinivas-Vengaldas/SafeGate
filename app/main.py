@@ -15,10 +15,21 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from pydantic import BaseModel
 
 from app import metrics
+from app.attachments import (
+    IMAGE_TYPES,
+    Attachment,
+    UnreadableAttachment,
+    chunks,
+    extract,
+    find_attachments,
+    redact_image,
+    replace_with_text,
+)
 from app.config import Settings, get_settings
 from app.pipeline import PipelineResult, overall_action, run_rails
 from app.policy import LoadedPolicy, PolicyRegistry
 from app.proxy import completion_json, forward_chat_completion, sse_completion
+from app.rails.base import Action, Verdict
 from app.ratelimit import RateLimiter, VerdictCache, make_backend
 from app.store import DecisionStore
 
@@ -83,23 +94,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def check(
         body: CheckRequest, request: Request, x_safegate_app: str | None = Header(default=None)
     ) -> Any:
-        """Screen text with the input rails without calling an LLM."""
+        """Screen text, and optionally attached images or files, without calling an LLM."""
         request_id = str(uuid.uuid4())
         loaded = app.state.policies.get(x_safegate_app)
         policy = loaded.policy
         if limited := await _rate_limit(request, loaded, request_id):
             return limited
         started = time.perf_counter()
-        result = await _screen(loaded, body.text, body.stage)
+        results: list[PipelineResult] = []
+        result = None
+        if body.text or not body.files:
+            result = await _screen(loaded, body.text, body.stage)
+            results.append(result)
+        files = []
+        for upload in body.files:
+            data_url = (
+                upload.data
+                if upload.data.startswith("data:")
+                else (
+                    f"data:{upload.media_type or 'application/octet-stream'};base64,{upload.data}"
+                )
+            )
+            part = {"type": "file", "file": {"filename": upload.name, "file_data": data_url}}
+            attachment = find_attachments([{"role": "user", "content": [part]}], ["user"])[0]
+            if attachment.media_type in IMAGE_TYPES:
+                attachment.kind = "image"
+                attachment.part = {"type": "image_url", "image_url": {"url": data_url}}
+            file_result = await _screen_attachment(loaded, attachment)
+            results.append(file_result)
+            files.append(_attachment_json(attachment, file_result))
         screen_ms = (time.perf_counter() - started) * 1000
         endpoint = "check" if body.stage == "input" else "check_output"
-        await _record(request_id, policy.name, endpoint, body.text, [result], screen_ms)
+        audit_text = "\n".join([body.text, *(f.get("source_text", "") for f in files)])
+        await _record(request_id, policy.name, endpoint, audit_text, results, screen_ms)
+        for f in files:
+            f.pop("source_text", None)
         return {
             "request_id": request_id,
-            "action": result.action.value,
-            "text": result.text,
+            "action": overall_action(results).value,
+            "text": result.text if result else "",
             "screen_ms": round(screen_ms, 3),
-            "verdicts": [_verdict_json(v) for v in result.verdicts],
+            "verdicts": [_verdict_json(v) for v in result.verdicts] if result else [],
+            "files": files,
         }
 
     @app.post("/v1/chat/completions")
@@ -134,6 +170,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             holder[key] = result.text
             if result.blocked_by:
                 break
+        # Then every attached image and file, unless a text part was already blocked.
+        if policy.attachments.screen and not any(r.blocked_by for r in results):
+            for attachment in find_attachments(body["messages"], policy.screen_roles):
+                result = await _screen_attachment(loaded, attachment)
+                results.append(result)
+                texts.append(attachment.text)
+                if result.blocked_by:
+                    break
         screened_text = "\n".join(texts)
         screen_ms = (time.perf_counter() - started) * 1000
 
@@ -216,6 +260,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await app.state.cache.set(key, result)
         return result
 
+    async def _screen_attachment(loaded: LoadedPolicy, attachment: Attachment) -> PipelineResult:
+        """Read an attachment, screen its text in pieces with the input rails and rewrite it in
+        the request: images re-encoded without metadata and with redacted words blacked out,
+        documents with redactions replaced by their redacted text."""
+        cfg = loaded.policy.attachments
+        stage = "file"
+        try:
+            await asyncio.to_thread(
+                extract,
+                attachment,
+                max_bytes=cfg.max_bytes,
+                max_pages=cfg.max_pages,
+                ocr_lang=cfg.ocr_lang,
+            )
+            if len(attachment.text) > cfg.max_chars:
+                raise UnreadableAttachment(
+                    f"{attachment.label}: more than {cfg.max_chars} characters of text"
+                )
+        except UnreadableAttachment as exc:
+            action = Action.BLOCK if cfg.unreadable == "block" else Action.ALLOW
+            verdict = Verdict("attachments", action, 1.0, str(exc))
+            metrics.RAIL_ACTIONS.labels("attachments", stage, action.value).inc()
+            return PipelineResult(text="", verdicts=[verdict], stage=stage)
+
+        pieces: list[PipelineResult] = []
+        for piece in chunks(attachment.text, cfg.chunk_chars) if attachment.text.strip() else []:
+            pieces.append(await _screen(loaded, piece, stage))
+            if pieces[-1].blocked_by:
+                break
+        result = PipelineResult(
+            text="".join(p.text for p in pieces), verdicts=_merge_verdicts(pieces), stage=stage
+        )
+        if result.blocked_by:
+            return result
+        if attachment.kind == "image":
+            await asyncio.to_thread(redact_image, attachment, result.text)
+        elif result.text != attachment.text:
+            replace_with_text(attachment, result.text)
+        return result
+
     async def _rate_limit(
         request: Request, loaded: LoadedPolicy, request_id: str
     ) -> JSONResponse | None:
@@ -263,10 +347,52 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
+class CheckFile(BaseModel):
+    name: str | None = None
+    media_type: str | None = None
+    data: str  # a data: URL, or bare base64 with media_type set
+
+
 class CheckRequest(BaseModel):
-    text: str
+    text: str = ""
     # "output" screens text as a model reply, with the policy's output rails.
     stage: Literal["input", "output"] = "input"
+    # Images or documents, screened as if attached to a chat request.
+    files: list[CheckFile] = []
+
+
+def _merge_verdicts(pieces: list[PipelineResult]) -> list[Verdict]:
+    """One verdict per rail across the pieces of a document: its strongest action, highest
+    score and distinct reasons, in the order the rails ran."""
+    rank = {Action.ALLOW: 0, Action.REDACT: 1, Action.BLOCK: 2}
+    merged: dict[str, Verdict] = {}
+    for piece in pieces:
+        for v in piece.verdicts:
+            seen = merged.get(v.rail)
+            if seen is None:
+                merged[v.rail] = Verdict(v.rail, v.action, v.score, v.reason)
+                continue
+            action = max(seen.action, v.action, key=rank.__getitem__)
+            reasons = [r for r in dict.fromkeys([seen.reason, v.reason]) if r]
+            merged[v.rail] = Verdict(v.rail, action, max(seen.score, v.score), "; ".join(reasons))
+    return list(merged.values())
+
+
+def _attachment_json(attachment: Attachment, result: PipelineResult) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "name": attachment.filename,
+        "media_type": attachment.media_type,
+        "action": result.action.value,
+        "text": result.text,
+        "verdicts": [_verdict_json(v) for v in result.verdicts],
+        "source_text": attachment.text,  # hashed into the audit log, not returned
+    }
+    if attachment.pages:
+        out["pages"] = attachment.pages
+    if attachment.kind == "image" and not result.blocked_by and attachment.data:
+        out["image"] = attachment.part["image_url"]["url"]
+        out["words_hidden"] = attachment.hidden_words
+    return out
 
 
 def _text_parts(messages: list[Any], roles: list[str]) -> list[tuple[dict, str]]:

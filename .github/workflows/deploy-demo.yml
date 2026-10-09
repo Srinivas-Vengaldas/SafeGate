@@ -84,6 +84,24 @@ jobs:
           python3 -c "import json; print(json.dumps({'text': 'Summarize this report. ' * 300}))" \
             | curl -sf localhost:8000/v1/check -H 'content-type: application/json' -d @- \
             | python3 -c "import json, sys; d = json.load(sys.stdin); print(d['action'], d['screen_ms'], 'ms')"
+          # A screenshot with PII: OCR (Tesseract) runs alongside both classifiers.
+          docker exec demo python -c "
+          import base64, io, json, urllib.request
+          from PIL import Image, ImageDraw, ImageFont
+          image = Image.new('RGB', (760, 160), 'white')
+          draw = ImageDraw.Draw(image)
+          font = ImageFont.load_default(size=22)
+          draw.text((20, 20), 'Email: jane.doe@example.com', fill='black', font=font)
+          draw.text((20, 80), 'API key: AKIAIOSFODNN7EXAMPLE', fill='black', font=font)
+          out = io.BytesIO(); image.save(out, 'PNG')
+          url = 'data:image/png;base64,' + base64.b64encode(out.getvalue()).decode()
+          body = json.dumps({'files': [{'name': 'shot.png', 'data': url}]}).encode()
+          request = urllib.request.Request('http://localhost:8000/v1/check', body, {'content-type': 'application/json'})
+          d = json.load(urllib.request.urlopen(request, timeout=120))
+          f = d['files'][0]
+          print('screenshot:', d['action'], d['screen_ms'], 'ms,', f['words_hidden'], 'words hidden')
+          assert d['action'] == 'redact', d
+          " | tee -a "$GITHUB_STEP_SUMMARY"
           docker stats --no-stream demo
           test "$(docker inspect -f '{{.State.OOMKilled}}' demo)" = false
           # The weights are a memory-mapped file, so the process's RSS includes ~170 MB of page

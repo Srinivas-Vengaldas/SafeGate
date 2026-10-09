@@ -77,7 +77,7 @@ explains the block with `finish_reason: "content_filter"`. Requests over a polic
 | Endpoint | Purpose |
 | --- | --- |
 | `POST /v1/chat/completions` | OpenAI-compatible proxy, including `stream: true` passthrough |
-| `POST /v1/check` | Screen text without calling an LLM; returns per-rail verdicts. `"stage": "output"` runs the output rails |
+| `POST /v1/check` | Screen text, and optionally `files` (images or documents as data URLs), without calling an LLM; returns per-rail verdicts. `"stage": "output"` runs the output rails |
 | `GET /v1/decisions` | Audit log; filters: `app`, `action`, `rail` (blocking rail), `since`, `until`, `limit`, `offset` |
 | `GET /v1/stats` | Dashboard aggregates over recent decisions: counts by verdict and rail, p50/p95 latency |
 | `GET /v1/policy` | The active policy (rails and their order) |
@@ -86,6 +86,25 @@ explains the block with `finish_reason: "content_filter"`. Requests over a polic
 | `GET /healthz` | Liveness; returns 503 until policies and models are loaded |
 
 Every response carries an `X-SafeGate-Request-Id` header that matches the decision log row.
+
+### Images and documents
+
+Images, screenshots and files attached to a chat request are screened too, as OpenAI-style
+content parts (`image_url` with a data URL, or `file` with `file_data`):
+
+- **Images and screenshots** are read with OCR (Tesseract). Redacted words (an email address, an
+  API key) are blacked out in the image itself, and every image is re-encoded without metadata
+  such as GPS location or camera details.
+- **PDFs** (text layer), **Word** files and plain-text files are read and screened in pieces of
+  4,000 characters, each like a prompt. A document with redactions is forwarded as its redacted
+  text.
+- **A block anywhere blocks the request.** An injection hidden in a document ("note to the AI
+  reading this file: ignore your instructions...") stops it before the LLM is called.
+- **What SafeGate can't read, it can't vouch for:** remote image URLs, uploaded file ids,
+  encrypted PDFs and unknown formats are blocked by default (`attachments.unreadable: allow`
+  lets them through unscreened). Scanned PDFs without a text layer aren't OCR'd yet.
+
+Limits are per policy under `attachments:` (size, pages, characters, OCR language).
 
 ## Policies
 

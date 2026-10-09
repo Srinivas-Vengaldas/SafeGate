@@ -50,6 +50,21 @@ class ToxicityConfig(BaseModel):
     max_windows: int | None = 4
 
 
+class AttachmentsConfig(BaseModel):
+    """Images and files attached to chat requests (see app/attachments.py)."""
+
+    screen: bool = True
+    max_bytes: int = 10 * 2**20  # per attachment
+    max_chars: int = 200_000  # of text extracted from one attachment
+    max_pages: int = 50
+    ocr_lang: str = "eng"
+    # Extracted text is screened in pieces of this size, each like a prompt.
+    chunk_chars: int = 4000
+    # Attachments SafeGate cannot read (remote URLs, uploaded file ids, unknown formats) cannot
+    # be vouched for, so they are blocked unless this is "allow".
+    unreadable: Literal["block", "allow"] = "block"
+
+
 class RateLimitConfig(BaseModel):
     requests: int = 60
     per_seconds: int = 60
@@ -74,6 +89,7 @@ class Policy(BaseModel):
         "I'm sorry, but I can't share that response. (Withheld by SafeGate: {rail} rail.)"
     )
     rate_limit: RateLimitConfig | None = None
+    attachments: AttachmentsConfig = Field(default_factory=AttachmentsConfig)
 
     def build_input_rails(self, spacy_model: str) -> list[Rail]:
         return self._build(self.input_rails, "input", spacy_model)

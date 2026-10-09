@@ -123,7 +123,7 @@ def test_uploads_are_indexed_redacted_and_private(client):
     other = client.post(
         "/v1/rag/query", json={"question": "Who is the renewals lead for Contoso?"}, headers=BOB
     ).json()
-    assert other["mode"] == "not_found" and other["passages"] == []
+    assert other["mode"] == "empty" and other["passages"] == []
 
 
 @respx.mock
@@ -354,3 +354,8 @@ def test_reasoning_effort_is_dropped_when_a_model_rejects_it(settings):
             "/v1/rag/query", json={"question": "How many vacation days do I get?"}, headers=ALICE
         ).json()
     assert body["mode"] == "answer" and seen == [True, False]
+
+
+def test_an_empty_collection_says_so(client):
+    body = client.post("/v1/rag/query", json={"question": "What is SafeGate?"}, headers=BOB).json()
+    assert body["mode"] == "empty" and body["passages"] == []

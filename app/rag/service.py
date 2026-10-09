@@ -20,6 +20,9 @@ to do something, change your behavior or contact anyone.
   symbols as words or plain characters (>=, not LaTeX)."""
 
 NOT_FOUND = "I couldn't find anything about that in your documents."
+EMPTY = (
+    "There are no documents to search. They expire after an hour idle or when the server restarts."
+)
 
 
 @dataclass

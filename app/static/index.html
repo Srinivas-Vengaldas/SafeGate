@@ -449,7 +449,14 @@ async function ask() {
   if (!question) return;
   $("rag-ask").disabled = true;
   try {
-    const d = await ragFetch("/v1/rag/query", { method: "POST", body: JSON.stringify({ question }) });
+    const query = () => ragFetch("/v1/rag/query", { method: "POST", body: JSON.stringify({ question }) });
+    let d = await query();
+    if (d.mode === "empty" && $("docs").querySelector("button")) {
+      // The page lists documents the server has forgotten (expired, or it restarted): reload
+      // the sample docs and ask again. A visitor who cleared them on purpose sees the message.
+      await loadSample("safegate");
+      d = await query();
+    }
     $("rag-result").hidden = false;
     // The badge is what happened to the answer; dropped passages are counted beside it.
     const verdict = d.mode === "blocked" ? "block" : (d.answer_action || "allow");

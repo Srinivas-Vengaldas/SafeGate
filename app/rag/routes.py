@@ -33,6 +33,7 @@ from app.pipeline import PipelineResult, overall_action
 from app.policy import LoadedPolicy
 from app.rag.embed import Embedder, HashingEmbedder, UpstreamEmbedder
 from app.rag.service import (
+    EMPTY,
     NOT_FOUND,
     SAMPLE_SETS,
     AnswerError,
@@ -333,6 +334,11 @@ def add_rag_routes(
 
         if question.blocked_by:
             return await finish("blocked")
+
+        if not rag().store.documents(name):
+            # Nothing indexed: never loaded, expired, or wiped by a restart (the index lives in
+            # memory). Say so, rather than "not found", so the client can reload its documents.
+            return await finish("empty", answer=EMPTY)
 
         k = body.k or settings.rag_top_k
         try:

@@ -75,7 +75,13 @@ async def screen(page: Page, text: str, note: str, hold: float = 5.5) -> None:
     await box.type(text, delay=18)
     await page.wait_for_timeout(400)
     previous = await page.locator("#timing").text_content()
-    await page.click("#run")
+    async with page.expect_response(
+        lambda r: r.url.endswith("/v1/check") and r.request.method == "POST", timeout=90_000
+    ) as checked:
+        await page.click("#run")
+    response = await checked.value
+    if not response.ok:
+        raise RuntimeError(f"check failed: {response.status} {await response.text()}")
     await page.wait_for_function(
         "prev => !document.getElementById('result').hidden"
         " && document.getElementById('timing').textContent !== prev",

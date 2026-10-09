@@ -150,8 +150,8 @@ async def record(url: str, out: Path, chromium: str | None = None) -> Path:
         )
         await screen(
             page,
-            "My deploy fails with OPENAI_API_KEY=sk-proj-Xy7Qw2Lp9Rt4Vb8Nm3Kd6Hs1 and my aunt "
-            "gave me 1jeunen as a password.",
+            "Write a short welcome note for visitors. The guest wifi password is kdjfhqwe and "
+            "the booking API key is sk-proj-Xy7Qw2Lp9Rt4Vb8Nm3Kd6Hs1.",
             "Leaked API keys and passwords are caught before they reach a third-party model.",
             hold=6.5,
         )

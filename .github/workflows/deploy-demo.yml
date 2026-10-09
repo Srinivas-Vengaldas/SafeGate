@@ -92,6 +92,8 @@ jobs:
           docker exec demo sh -c "grep -E 'VmHWM|VmRSS|RssAnon|RssFile' /proc/1/status" \
             | awk '{printf "%s %d MB  ", $1, $2 / 1024} END {print ""}' | tee -a "$GITHUB_STEP_SUMMARY"
           test "$(docker inspect -f '{{.State.Running}}' demo)" = true
+      - if: failure()
+        run: docker logs --tail 80 demo
 
       - name: Push
         run: |

@@ -2,7 +2,8 @@ name: Compare with baselines
 
 # Scores SafeGate's served injection classifier against the rules rail alone and public
 # baseline classifiers on the same test sets (training/compare.py). Each baseline is exported to
-# ONNX int8 like SafeGate's model, so accuracy and latency are compared as they would be served.
+# ONNX int8 like SafeGate's model too, so it is scored both as published (PyTorch fp32) and as
+# SafeGate would serve it.
 # Results go to the job summary, the compare-report artifact and the compare-results/<run id>
 # branch.
 
@@ -64,8 +65,9 @@ jobs:
           name="$(basename "$BASELINE")"
           python -m training.compare --data data --out reports/compare \
             --model "SafeGate (DeBERTa-v3-small, int8)=models/injection-onnx@$(cat models/injection-threshold)" \
-            --model "$name (int8, default threshold)=models/baseline-onnx@$BASELINE_THRESHOLD" \
-            --model "$name (int8, threshold tuned on our validation split)=models/baseline-onnx@val"
+            --model "$name (as published, PyTorch fp32)=$BASELINE@$BASELINE_THRESHOLD" \
+            --model "$name (fp32, threshold tuned on our validation split)=$BASELINE@val" \
+            --model "$name (ONNX int8, like SafeGate)=models/baseline-onnx@$BASELINE_THRESHOLD"
           cp data/stats.json reports/compare/dataset_stats.json
           {
             echo "## Injection detectors on the same test sets"

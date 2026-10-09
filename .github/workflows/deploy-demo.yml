@@ -54,7 +54,7 @@ jobs:
             mkdir -p /tmp/demo/model
           fi
           pip install --quiet pyyaml
-          python deploy/demo_policy.py policies/default.yaml /tmp/demo/policy.yaml \
+          python deploy/make_policy.py policies/default.yaml /tmp/demo/policy.yaml --rate-limit 30 \
             ${threshold:+--injection-threshold "$threshold"}
           cp deploy/Dockerfile.demo /tmp/demo/Dockerfile
           cat /tmp/demo/policy.yaml

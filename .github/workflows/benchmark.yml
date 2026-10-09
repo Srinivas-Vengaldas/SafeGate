@@ -1,0 +1,207 @@
+name: Benchmark
+
+# Measures SafeGate with the latest trained classifier and exported toxicity model:
+#   latency: added latency over a direct call, 1,000 requests per target (eval/latency_bench.py)
+#   redteam: garak attack success rate against a small local LLM (Ollama), bare and behind
+#            SafeGate, by probe category (eval/garak_summary.py)
+# Results are uploaded as the benchmark-reports artifact and committed to the
+# benchmark-results/<run id> branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      requests:
+        description: Requests per latency target
+        default: "1000"
+      llm:
+        description: Ollama model attacked by garak
+        default: qwen2.5:1.5b
+      prompt_cap:
+        description: Max prompts per garak probe
+        default: "40"
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  PROBES: >-
+    promptinject.HijackHateHumans,promptinject.HijackKillHumans,promptinject.HijackLongPrompt,
+    dan.DanInTheWild,encoding.InjectBase64,latentinjection.LatentInjectionReport,
+    latentinjection.LatentJailbreak,realtoxicityprompts.RTPInsult,realtoxicityprompts.RTPThreat
+
+jobs:
+  latency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          pip install -e ".[onnx]"
+          python -m spacy download en_core_web_sm
+      - name: Fetch models
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: deploy/fetch_models.sh models
+      - name: Write policies
+        run: |
+          mkdir -p /tmp/policies
+          python deploy/make_policy.py policies/default.yaml /tmp/policies/default.yaml \
+            --injection-threshold "$(cat models/injection-threshold)" \
+            --toxicity-model models/toxicity-onnx
+          # The baseline app: the gateway with no rails at all.
+          echo '{}' > /tmp/policies/norails.yaml
+          cat /tmp/policies/default.yaml
+      - name: Start the mock LLM and two gateways (verdict cache off and on)
+        run: |
+          nohup uvicorn eval.mock_upstream:app --port 9000 > /tmp/mock.log 2>&1 &
+          for port in 8000 8001; do
+            ttl=$([ "$port" = 8000 ] && echo 0 || echo 3600)
+            SAFEGATE_UPSTREAM_BASE_URL=http://127.0.0.1:9000/v1 SAFEGATE_POLICY_DIR=/tmp/policies \
+              SAFEGATE_CACHE_TTL_S=$ttl SAFEGATE_DATABASE_URL=sqlite+aiosqlite:////tmp/sg$port.db \
+              nohup uvicorn app.main:app --port $port > /tmp/sg$port.log 2>&1 &
+          done
+          for port in 8000 8001; do
+            for i in $(seq 1 90); do curl -sf localhost:$port/healthz && break; sleep 2; done
+          done
+      - name: Run the latency benchmark
+        env:
+          REQUESTS: ${{ inputs.requests }}
+        run: |
+          python eval/latency_bench.py --upstream http://127.0.0.1:9000/v1 \
+            --gateway http://127.0.0.1:8000/v1 --cached-gateway http://127.0.0.1:8001/v1 \
+            --requests "$REQUESTS" --out reports/latency
+          nproc > reports/latency/cpus.txt
+          cat reports/latency/latency.md >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -50 /tmp/sg8000.log /tmp/mock.log
+      - uses: actions/upload-artifact@v4
+        with:
+          name: latency
+          path: reports/latency/
+
+  redteam:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [bare, safegate]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Start Ollama
+        env:
+          LLM: ${{ inputs.llm }}
+        run: |
+          docker run -d --name ollama -p 11434:11434 ollama/ollama:latest
+          for i in $(seq 1 60); do curl -sf localhost:11434/api/version && break; sleep 2; done
+          docker exec ollama ollama pull "$LLM"
+      - name: Start SafeGate in front of it
+        if: matrix.target == 'safegate'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -m venv /tmp/sg && . /tmp/sg/bin/activate
+          pip install -e ".[onnx]"
+          python -m spacy download en_core_web_sm
+          deploy/fetch_models.sh models
+          mkdir -p /tmp/policies
+          # refuse: blocked requests get a normal refusal reply, which garak scores as a
+          # mitigated attack, instead of an HTTP 400 that garak would drop from the count.
+          python deploy/make_policy.py policies/default.yaml /tmp/policies/default.yaml \
+            --injection-threshold "$(cat models/injection-threshold)" \
+            --toxicity-model models/toxicity-onnx --on-block refuse
+          cat /tmp/policies/default.yaml
+          SAFEGATE_UPSTREAM_BASE_URL=http://127.0.0.1:11434/v1 SAFEGATE_POLICY_DIR=/tmp/policies \
+            SAFEGATE_UPSTREAM_TIMEOUT_S=300 nohup uvicorn app.main:app --port 8000 > /tmp/sg.log 2>&1 &
+          for i in $(seq 1 90); do curl -sf localhost:8000/healthz && break; sleep 2; done
+      - name: Install garak
+        run: |
+          python -m venv /tmp/garak
+          /tmp/garak/bin/pip install garak==0.17.0
+      - name: Run garak
+        env:
+          LLM: ${{ inputs.llm }}
+          CAP: ${{ inputs.prompt_cap }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          uri=$([ "$TARGET" = safegate ] && echo http://127.0.0.1:8000/v1 || echo http://127.0.0.1:11434/v1)
+          cat > /tmp/garak.yaml <<EOF
+          run:
+            generations: 1
+            soft_probe_prompt_cap: $CAP
+            seed: 42
+          plugins:
+            extended_detectors: false
+            generators:
+              openai:
+                OpenAICompatible:
+                  uri: $uri
+                  api_key: benchmark
+                  temperature: 0
+                  max_tokens: 120
+                  suppressed_params: [frequency_penalty, presence_penalty, stop]
+          reporting:
+            report_prefix: $TARGET
+          EOF
+          export OPENAICOMPATIBLE_API_KEY=benchmark
+          /tmp/garak/bin/garak --config /tmp/garak.yaml \
+            --target_type openai.OpenAICompatible --target_name "$LLM" \
+            --probes "$(echo $PROBES | tr -d ' ')"
+          mkdir -p reports/redteam
+          find ~ -name "$TARGET.report.jsonl" -exec cp {} reports/redteam/ \;
+          ls -la reports/redteam
+          if [ "$TARGET" = safegate ]; then
+            curl -sf localhost:8000/v1/stats > reports/redteam/safegate-stats.json
+          fi
+      - if: failure() && matrix.target == 'safegate'
+        run: tail -80 /tmp/sg.log
+      - uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: redteam-${{ matrix.target }}
+          path: reports/redteam/
+
+  report:
+    needs: [latency, redteam]
+    if: success() || failure()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/artifacts
+      - name: Summarize
+        env:
+          LLM: ${{ inputs.llm }}
+        run: |
+          mkdir -p reports
+          cp -r /tmp/artifacts/latency reports/latency || true
+          mkdir -p reports/redteam
+          cp /tmp/artifacts/redteam-*/* reports/redteam/ || true
+          if [ -f reports/redteam/bare.report.jsonl ] && [ -f reports/redteam/safegate.report.jsonl ]; then
+            python eval/garak_summary.py --bare reports/redteam/bare.report.jsonl \
+              --safegate reports/redteam/safegate.report.jsonl --model "$LLM" --out reports/redteam
+            cat reports/redteam/garak.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          ls -R reports
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-reports
+          path: reports/
+      - name: Commit results to a branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "benchmark-results/${{ github.run_id }}"
+          git add -f reports/latency reports/redteam
+          git commit -m "Benchmark results from run ${{ github.run_id }}"
+          git push origin "benchmark-results/${{ github.run_id }}"

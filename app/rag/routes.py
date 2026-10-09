@@ -50,7 +50,7 @@ log = logging.getLogger(__name__)
 _COLLECTION = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
 Screen = Callable[[LoadedPolicy, str, str], Awaitable[PipelineResult]]
-ScreenAttachment = Callable[[LoadedPolicy, Attachment], Awaitable[PipelineResult]]
+ScreenAttachment = Callable[[LoadedPolicy, Attachment, str], Awaitable[PipelineResult]]
 RateLimit = Callable[[Request, LoadedPolicy, str], Awaitable[JSONResponse | None]]
 Record = Callable[[str, str, str, str, list[PipelineResult], float], Awaitable[None]]
 
@@ -193,7 +193,7 @@ def add_rag_routes(
             attachment = from_upload(body.name, "text/plain", encoded)
 
         started = time.perf_counter()
-        result = await screen_attachment(loaded, attachment)
+        result = await screen_attachment(loaded, attachment, "context")
         screen_ms = (time.perf_counter() - started) * 1000
         await record(
             request_id, loaded.policy.name, "rag_ingest", attachment.text, [result], screen_ms

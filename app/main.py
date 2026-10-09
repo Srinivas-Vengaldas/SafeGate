@@ -244,18 +244,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             metrics.CACHE_LOOKUPS.labels(stage, "hit").inc()
             return cached
         metrics.CACHE_LOOKUPS.labels(stage, "miss").inc()
-        rails = loaded.output_rails if stage == "output" else loaded.input_rails
+        rails = {"output": loaded.output_rails, "context": loaded.context_rails}.get(
+            stage, loaded.input_rails
+        )
         # Rails are CPU-bound (spaCy, classifiers): keep them off the event loop.
         result = await asyncio.to_thread(run_rails, rails, text, stage)
         await app.state.cache.set(key, result)
         return result
 
-    async def _screen_attachment(loaded: LoadedPolicy, attachment: Attachment) -> PipelineResult:
+    async def _screen_attachment(
+        loaded: LoadedPolicy, attachment: Attachment, stage: str = "file"
+    ) -> PipelineResult:
         """Read an attachment, screen its text in pieces with the input rails and rewrite it in
         the request: images re-encoded without metadata and with redacted words blacked out,
         documents with redactions replaced by their redacted text."""
         cfg = loaded.policy.attachments
-        stage = "file"
         try:
             await asyncio.to_thread(
                 extract,

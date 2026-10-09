@@ -130,6 +130,13 @@ question -> input rails -> embed -> retrieve top k -> input rails on each passag
   dropped. This is the defence against indirect injection: text that reached the index some other
   way (a synced wiki, a shared drive, a document indexed before the policy changed). Each sample
   knowledge base plants one such document, indexed without screening, to show it being caught.
+- **Documents get their own rails** (`context_rails` in the policy), used both when a document
+  is indexed and when its passages are retrieved. The injection classifier, trained on user
+  prompts, misreads documentation about LLMs as attacks: it flagged 22 of the 33 passages of
+  SafeGate's own docs, and none of a company handbook. So the default context rails leave it out
+  and look instead for phrasings aimed at an AI that happens to read the text ("note to the AI
+  assistant", "if you are an AI", "ignore previous instructions"), alongside the secrets and PII
+  rails. A classifier trained on documents with embedded attacks is on the roadmap.
 - **Generation:** the prompt tells the model the sources are data, not instructions, and to cite
   them as `[n]`; citations of sources that don't exist are removed. The answer goes through the
   output rails like any reply.
@@ -162,6 +169,10 @@ input_rails:
   injection:
     model: models/injection-onnx
     threshold: 0.975
+context_rails:                # retrieved documents (RAG); unset means the input rails
+  rules:
+    patterns: ['note\s+to\s+the\s+ai']
+  pii: {}
 output_rails:                 # screen the model's reply
   secrets: {}
   pii:

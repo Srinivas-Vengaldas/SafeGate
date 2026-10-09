@@ -77,6 +77,10 @@ class Policy(BaseModel):
     input_rails: dict[str, Any] = Field(default_factory=dict)
     # Screen the model's reply before the client sees it. Streams are buffered when set.
     output_rails: dict[str, Any] = Field(default_factory=dict)
+    # Rails for third-party text an app retrieves (RAG passages and the documents indexed for
+    # them). Unset: the input rails. A classifier trained on prompts can misread documents that
+    # merely discuss LLMs as attacks, so a policy may screen documents differently.
+    context_rails: dict[str, Any] | None = None
     # How a blocked chat request is answered: an OpenAI-style 400 error, or a normal completion
     # whose message explains the block (finish_reason "content_filter"), for clients that treat
     # errors as outages.
@@ -93,6 +97,11 @@ class Policy(BaseModel):
 
     def build_input_rails(self, spacy_model: str) -> list[Rail]:
         return self._build(self.input_rails, "input", spacy_model)
+
+    def build_context_rails(self, spacy_model: str) -> list[Rail] | None:
+        if self.context_rails is None:
+            return None
+        return self._build(self.context_rails, "context", spacy_model)
 
     def build_output_rails(self, spacy_model: str) -> list[Rail]:
         return self._build(self.output_rails, "output", spacy_model)
@@ -122,6 +131,7 @@ class LoadedPolicy(NamedTuple):
     input_rails: list[Rail]
     output_rails: list[Rail]
     fingerprint: str  # changes whenever the policy file does, so cached verdicts expire with it
+    context_rails: list[Rail]
 
 
 class PolicyRegistry:
@@ -138,11 +148,14 @@ class PolicyRegistry:
             return None
         source = path.read_text()
         policy = Policy(name=name, **(yaml.safe_load(source) or {}))
+        input_rails = policy.build_input_rails(self.spacy_model)
+        context_rails = policy.build_context_rails(self.spacy_model)
         return LoadedPolicy(
             policy,
-            policy.build_input_rails(self.spacy_model),
+            input_rails,
             policy.build_output_rails(self.spacy_model),
             hashlib.sha256(f"{name}\0{source}".encode()).hexdigest()[:16],
+            input_rails if context_rails is None else context_rails,
         )
 
     def get(self, app: str | None) -> LoadedPolicy:

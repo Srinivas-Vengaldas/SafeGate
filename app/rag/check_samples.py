@@ -1,4 +1,4 @@
-"""Screens every passage of the sample knowledge bases with a policy's input rails and fails if
+"""Screens every passage of the sample knowledge bases with a policy's context rails and fails if
 any passage is blocked other than in the planted documents, or a planted document gets through.
 
 A retrained classifier or an edited document could otherwise make the demo drop a harmless
@@ -23,11 +23,16 @@ def main() -> int:
     for name, make in SAMPLE_SETS.items():
         for document in make().documents:
             for i, passage in enumerate(document.passages):
-                result = run_rails(loaded.input_rails, passage, "context")
+                result = run_rails(loaded.context_rails, passage, "context")
                 blocked = result.blocked_by
                 scores = " ".join(
                     f"{v.rail}={v.score:.3f}" for v in result.verdicts if v.rail == "injection"
                 )
+                if not document.planted and "injection" not in scores:
+                    # The context rails skip the classifier; report what it would have said.
+                    injection = [r for r in loaded.input_rails if r.name == "injection"]
+                    if injection:
+                        scores = f"(input-rail injection={injection[0].check(passage).score:.3f})"
                 ok = bool(blocked) == document.planted
                 failures += not ok
                 status = "ok  " if ok else "FAIL"

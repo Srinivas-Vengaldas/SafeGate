@@ -124,6 +124,7 @@ jobs:
         # Every passage must pass except the planted ones: a retrained classifier or an edited
         # document must not make the demo drop harmless passages, or miss the planted one.
         run: |
+          set -o pipefail
           docker rm -f demo
           docker run --rm safegate-demo python -m app.rag.check_samples | tee -a "$GITHUB_STEP_SUMMARY"
 

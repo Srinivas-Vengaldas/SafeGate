@@ -1,0 +1,94 @@
+name: Compare with baselines
+
+# Scores SafeGate's served injection classifier against the rules rail alone and public
+# baseline classifiers on the same test sets (training/compare.py). Each baseline is exported to
+# ONNX int8 like SafeGate's model, so accuracy and latency are compared as they would be served.
+# Results go to the job summary, the compare-report artifact and the compare-results/<run id>
+# branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      baseline:
+        description: Hugging Face model to compare against
+        default: protectai/deberta-v3-base-prompt-injection-v2
+      baseline_threshold:
+        description: Baseline's threshold (its documented default)
+        default: "0.5"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[train,onnx]"
+      - name: Build dataset
+        run: python -m training.build_dataset --out data
+      - name: Fetch SafeGate's model
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: deploy/fetch_models.sh models
+      - name: Export the baseline to ONNX int8
+        env:
+          BASELINE: ${{ inputs.baseline }}
+        run: |
+          python -m training.export_onnx --model "$BASELINE" --out models/baseline-onnx
+          # Which datasets the baseline says it was trained on, to flag overlap with our test sets.
+          python - <<'PY' > models/baseline-card.txt
+          import os
+          from huggingface_hub import ModelCard
+          card = ModelCard.load(os.environ["BASELINE"])
+          print(card.data.to_dict().get("datasets") or "")
+          print(card.text)
+          PY
+      - name: Compare
+        env:
+          BASELINE: ${{ inputs.baseline }}
+          BASELINE_THRESHOLD: ${{ inputs.baseline_threshold }}
+        run: |
+          name="$(basename "$BASELINE")"
+          python -m training.compare --data data --out reports/compare \
+            --model "SafeGate (DeBERTa-v3-small, int8)=models/injection-onnx@$(cat models/injection-threshold)" \
+            --model "$name (int8, default threshold)=models/baseline-onnx@$BASELINE_THRESHOLD" \
+            --model "$name (int8, threshold tuned on our validation split)=models/baseline-onnx@val"
+          cp data/stats.json reports/compare/dataset_stats.json
+          {
+            echo "## Injection detectors on the same test sets"
+            echo
+            cat reports/compare/compare.md
+            echo
+            echo "Training datasets named in the baseline's model card that we also use:"
+            for source in deepset/prompt-injections jackhhao/jailbreak-classification \
+                Lakera/gandalf_ignore_instructions databricks/databricks-dolly-15k CodeAlpaca; do
+              grep -qi "$source" models/baseline-card.txt && echo "- $source"
+            done
+          } | tee reports/compare/summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compare-report
+          path: reports/compare/
+      - name: Commit results to a branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Orphan branch with only the reports, as in the benchmark workflow.
+          git checkout --orphan "compare-results/${{ github.run_id }}"
+          git rm -rq --cached .
+          git add -f reports/compare
+          git commit -m "Baseline comparison from run ${{ github.run_id }}"
+          git push origin "compare-results/${{ github.run_id }}"

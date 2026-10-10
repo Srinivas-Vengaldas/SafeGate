@@ -211,7 +211,7 @@ jobs:
           # An orphan branch holding only the reports: a branch that carries workflow files
           # differing from main cannot be pushed with the default token.
           git checkout --orphan "benchmark-results/${{ github.run_id }}"
-          git rm -rq --cached .
+          git rm -rqf --cached .
           git add -f reports/latency reports/redteam
           git commit -m "Benchmark results from run ${{ github.run_id }}"
           git push origin "benchmark-results/${{ github.run_id }}"

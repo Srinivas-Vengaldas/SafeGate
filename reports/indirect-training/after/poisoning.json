@@ -1,0 +1,124 @@
+{
+  "Document rails (default context rails)": {
+    "counts": {
+      "clean": 400,
+      "gandalf": 150,
+      "addressed": 80,
+      "unaddressed": 30,
+      "sample": 39
+    },
+    "blocked": {
+      "clean": 0,
+      "gandalf": 42,
+      "addressed": 30,
+      "unaddressed": 0,
+      "sample": 0
+    },
+    "rates": {
+      "clean": 0.0,
+      "gandalf": 0.28,
+      "addressed": 0.375,
+      "unaddressed": 0.0,
+      "sample": 0.0
+    },
+    "caught_all": 0.27692307692307694,
+    "false_drop": 0.0,
+    "sample_drop": 0.0,
+    "blocked_by": {
+      "rules": 72
+    },
+    "p50_ms": 2.0746389999999337
+  },
+  "Prompt rails (rules + classifier)": {
+    "counts": {
+      "clean": 400,
+      "gandalf": 150,
+      "addressed": 80,
+      "unaddressed": 30,
+      "sample": 39
+    },
+    "blocked": {
+      "clean": 6,
+      "gandalf": 143,
+      "addressed": 80,
+      "unaddressed": 28,
+      "sample": 16
+    },
+    "rates": {
+      "clean": 0.015,
+      "gandalf": 0.9533333333333334,
+      "addressed": 1.0,
+      "unaddressed": 0.9333333333333333,
+      "sample": 0.41025641025641024
+    },
+    "caught_all": 0.9653846153846154,
+    "false_drop": 0.015,
+    "sample_drop": 0.41025641025641024,
+    "blocked_by": {
+      "injection": 249,
+      "rules": 24
+    },
+    "p50_ms": 92.31669400000442
+  },
+  "Classifier only": {
+    "counts": {
+      "clean": 400,
+      "gandalf": 150,
+      "addressed": 80,
+      "unaddressed": 30,
+      "sample": 39
+    },
+    "blocked": {
+      "clean": 3,
+      "gandalf": 143,
+      "addressed": 80,
+      "unaddressed": 28,
+      "sample": 16
+    },
+    "rates": {
+      "clean": 0.0075,
+      "gandalf": 0.9533333333333334,
+      "addressed": 1.0,
+      "unaddressed": 0.9333333333333333,
+      "sample": 0.41025641025641024
+    },
+    "caught_all": 0.9653846153846154,
+    "false_drop": 0.0075,
+    "sample_drop": 0.41025641025641024,
+    "blocked_by": {
+      "injection": 270
+    },
+    "p50_ms": 90.15860600001702
+  },
+  "Document rails + classifier": {
+    "counts": {
+      "clean": 400,
+      "gandalf": 150,
+      "addressed": 80,
+      "unaddressed": 30,
+      "sample": 39
+    },
+    "blocked": {
+      "clean": 6,
+      "gandalf": 143,
+      "addressed": 80,
+      "unaddressed": 28,
+      "sample": 16
+    },
+    "rates": {
+      "clean": 0.015,
+      "gandalf": 0.9533333333333334,
+      "addressed": 1.0,
+      "unaddressed": 0.9333333333333333,
+      "sample": 0.41025641025641024
+    },
+    "caught_all": 0.9653846153846154,
+    "false_drop": 0.015,
+    "sample_drop": 0.41025641025641024,
+    "blocked_by": {
+      "injection": 201,
+      "rules": 72
+    },
+    "p50_ms": 90.34451099995522
+  }
+}

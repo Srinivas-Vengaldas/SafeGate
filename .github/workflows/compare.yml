@@ -90,7 +90,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Orphan branch with only the reports, as in the benchmark workflow.
           git checkout --orphan "compare-results/${{ github.run_id }}"
-          git rm -rq --cached .
+          git rm -rqf --cached .
           git add -f reports/compare
           git commit -m "Baseline comparison from run ${{ github.run_id }}"
           git push origin "compare-results/${{ github.run_id }}"

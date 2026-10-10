@@ -1,6 +1,6 @@
 name: Deploy demo
 
-# Builds the public demo image (gateway + the latest trained ONNX classifier), checks that it
+# Builds the public demo image (gateway + the ONNX classifier pinned in deploy/injection-run), checks that it
 # fits in the free tier's memory, pushes it to GitHub Container Registry as
 # ghcr.io/<owner>/safegate:latest and, when the RENDER_DEPLOY_HOOK secret is set, tells Render to
 # redeploy it. See docs/deploy-demo.md for the one-time setup.

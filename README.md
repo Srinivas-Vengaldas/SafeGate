@@ -11,9 +11,10 @@ first load after a quiet spell takes about a minute) · **Video:** [2-minute wal
 | Result | |
 | --- | --- |
 | garak red-team attack success, bare LLM → behind SafeGate | 31.9% → **5.0%** |
-| Injection recall on a dataset never seen in training | **84.7%** |
-| False positives on safe prompts that look like attacks | **4.7%** |
-| Test F1 vs. ProtectAI's public DeBERTa injection model | **93.5%** vs. 82.3% |
+| Injection recall on a dataset never seen in training | **85.3%** |
+| Attacks hidden in retrieved documents caught (poisoned-retrieval benchmark) | **96.5%** (was 43.5%) |
+| False positives on safe prompts that look like attacks | **5.3%** |
+| Test F1 vs. ProtectAI's public DeBERTa injection model (prompts, v2) | **93.5%** vs. 82.3% |
 | Added latency, full rail stack (p50 / p95) | 45 / 48 ms; ~1 ms when cached |
 
 Details and caveats are under [Results](#results).
@@ -275,18 +276,24 @@ Never commit `.env`.
 ### Injection classifier
 
 DeBERTa-v3-small, 3 epochs on CPU (GitHub Actions). Full reports:
-[v1](reports/v1/metrics.md), [v2](reports/v2/metrics.md).
+[v1](reports/v1/metrics.md), [v2](reports/v2/metrics.md), [v3](reports/v3/metrics.md),
+[v3 as served](reports/v3-onnx/metrics.md).
 
-| Metric | Rules only | v1 | **v2 (current)** |
-| --- | ---: | ---: | ---: |
-| Test recall | 2.5% | 100.0% | 91.2% |
-| Test precision | 100.0% | 97.6% | 97.3% |
-| Test false-positive rate | 0.0% | 0.6% | 0.3% |
-| Held-out source recall (Gandalf, never seen in training) | 12.7% | 91.4% | 87.2% |
-| **Tricky-benign false-positive rate** | 0.0% | 18.7% | **4.7%** |
-| CPU latency per prompt, p50 / p95 | <1 ms | 71 / 379 ms | 79 / 431 ms |
+| Metric | Rules only | v1 | v2 | **v3 (current)** |
+| --- | ---: | ---: | ---: | ---: |
+| Test recall | 2.5% | 100.0% | 91.2% | 96.5% |
+| Test precision | 100.0% | 97.6% | 97.3% | 99.6% |
+| Test false-positive rate | 0.0% | 0.6% | 0.3% | 0.1% |
+| Held-out source recall (Gandalf, never seen in training) | 12.7% | 91.4% | 87.2% | 76.1% |
+| **Tricky-benign false-positive rate** | 0.0% | 18.7% | **4.7%** | 2.7% |
+| CPU latency per prompt, p50 / p95 | <1 ms | 71 / 379 ms | 79 / 431 ms | 68 / 115 ms |
 
-Rules-only numbers are on the v2 test split; v1's rules-only recall was 1.2%.
+Rules-only numbers are on the v2 test split; v1's rules-only recall was 1.2%. v3 adds document
+passages with hidden instructions to training (see [Training on documents](#training-on-documents)),
+so its test split includes them. As PyTorch at its own threshold (0.015) v3 trades held-out
+recall for fewer false positives; the int8 model the demo serves, at its threshold (0.007), keeps
+held-out recall at 83.4% to 85.3% with 4.7% to 5.3% tricky-benign FPR, about where v2 was. The
+rest of this section describes v2.
 
 What this shows:
 
@@ -340,7 +347,8 @@ ONNX Runtime memory-maps the weights instead of copying them onto the heap (copy
 ### Compared with a public baseline
 
 ProtectAI's [deberta-v3-base-prompt-injection-v2](https://huggingface.co/protectai/deberta-v3-base-prompt-injection-v2)
-is a widely used open injection classifier. Both models were scored in the same run on the same CPU
+is a widely used open injection classifier. This comparison is v2, on a test split of prompts
+only. Both models were scored in the same run on the same CPU
 and the same test sets, each in the form it would be served. Full report:
 [reports/compare/compare.md](reports/compare/compare.md).
 
@@ -364,6 +372,10 @@ and the same test sets, each in the form it would be served. Full report:
   input as benign, so it is compared as published. SafeGate's own int8 scores move by
   about a point between CI runners with different CPUs (held-out recall 83.8% to 84.7%,
   tricky-benign FPR 3.3% to 4.7%).
+- **Re-run with v3** ([reports/compare-v3](reports/compare-v3/compare.md)): on v3's test split,
+  which includes document passages, SafeGate scores 98.3% F1 against ProtectAI's 61.0%, but most
+  of that gap is documents, which ProtectAI was not trained for. Held-out recall 85.3% vs. 100%,
+  tricky-benign FPR 5.3% vs. 6.7%.
 
 ### Red-teaming with garak
 
